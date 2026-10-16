@@ -61,6 +61,7 @@ function render() {
   tabbar.hidden = false;
   renderTabbar();
   main.onkeydown = null;
+  main.oninput = null;
   main.dataset.tab = ctx.tab;
   TABS.find((t) => t.id === ctx.tab).view.render(main, ctx);
 }

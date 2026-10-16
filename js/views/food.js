@@ -5,6 +5,11 @@ import {
   icon, esc, num, parseNum, toast, vibrate, openSheet, confirmDialog, invalid, dateNav, handleDateNav,
 } from '../ui.js';
 import { foodTotals } from '../stats.js';
+import { loadFoodDb, searchFoods } from '../foods.js';
+import { openAmountSheet, scanFlow } from '../foodSheets.js';
+
+// Latest search results by key, so a tap can find the food object.
+let resultMap = new Map();
 
 export function render(root, ctx) {
   const k = ctx.date;
@@ -30,7 +35,7 @@ export function render(root, ctx) {
     .map(
       (f, i) => `<li class="list-row swipe" data-swipe="${i}">
         <div class="grow"><strong>${esc(f.name || 'ללא שם')}</strong>
-          <div class="muted small">${num(f.kcal || 0)} קק״ל · <span class="protein-txt">${num(f.protein || 0)} ג׳ חלבון</span></div></div>
+          <div class="muted small">${f.grams ? `${num(f.grams)} ג׳ · ` : ''}${num(f.kcal || 0)} קק״ל · <span class="protein-txt">${num(f.protein || 0)} ג׳ חלבון</span></div></div>
         <button type="button" class="icon-btn sm press danger-ic" data-action="food-del" data-i="${i}" aria-label="מחיקה">${icon('trash')}</button>
       </li>`
     )
@@ -38,6 +43,14 @@ export function render(root, ctx) {
 
   root.innerHTML = `
     ${dateNav(k, 'אוכל')}
+    <section class="card search-card">
+      <div class="search-row">
+        <label class="search-field">${icon('search')}
+          <input type="search" data-search placeholder="חיפוש מזון" aria-label="חיפוש מזון" autocomplete="off" enterkeyhint="search"></label>
+        <button type="button" class="icon-btn scan-btn press" data-action="scan" aria-label="סריקת ברקוד">${icon('barcode')}</button>
+      </div>
+      <div class="search-results" data-results hidden></div>
+    </section>
     <section class="card totals">
       ${ring({
         id: 'protein', size: 150, stroke: 14, frac: target ? t.protein / target : 0,
@@ -75,7 +88,48 @@ export function render(root, ctx) {
 
   root.onclick = (e) => onClick(e, ctx);
   root.onchange = null;
+  root.oninput = (e) => {
+    if (e.target.matches('[data-search]')) updateResults(root, e.target.value);
+  };
   bindSwipe(root, ctx);
+}
+
+/* ---------- Search ---------- */
+
+let searchSeq = 0;
+async function updateResults(root, query) {
+  const box = root.querySelector('[data-results]');
+  if (!box) return;
+  const seq = ++searchSeq;
+  if (!query.trim()) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  box.hidden = false;
+  let db;
+  try {
+    const pending = loadFoodDb();
+    if (!box.innerHTML) box.innerHTML = '<p class="muted small">טוען מאגר מזון…</p>';
+    db = await pending;
+  } catch {
+    db = []; // DB unavailable (first load offline) — own products still searchable
+  }
+  if (seq !== searchSeq) return; // a newer keystroke won
+  const results = searchFoods(db, query);
+  resultMap = new Map(results.map((f) => [f.key, f]));
+  box.innerHTML = results.length
+    ? `<ul class="list">${results
+        .map(
+          (f) => `<li><button type="button" class="food-result press" data-action="food-pick" data-key="${esc(f.key)}">
+            <span class="grow"><strong>${esc(f.name)}</strong>
+              <span class="muted small">${num(f.kcal100)} קק״ל · <span class="protein-txt">${num(f.protein100)} ג׳ חלבון</span> · ל-100 ג׳</span></span>
+            ${f.source === 'custom' ? `<span class="badge">${icon(f.barcode ? 'barcode' : 'box')}<span>שלי</span></span>` : ''}
+            ${icon('plus', 'add-ic')}
+          </button></li>`
+        )
+        .join('')}</ul>`
+    : `<p class="muted small">לא נמצאו תוצאות${db.length ? '' : ' (מאגר המזון ייטען כשיהיה חיבור)'}. אפשר להזין ידנית למטה.</p>`;
 }
 
 async function onClick(e, ctx) {
@@ -86,10 +140,18 @@ async function onClick(e, ctx) {
   if (handleDateNav(a, ctx)) return ctx.rerender();
 
   switch (a) {
+    case 'food-pick': {
+      const food = resultMap.get(b.dataset.key);
+      if (food && (await openAmountSheet(k, food))) ctx.rerender();
+      return;
+    }
+    case 'scan':
+      if (await scanFlow(k)) ctx.rerender();
+      return;
     case 'preset-add': {
       const p = getState().mealPresets.find((m) => m.id === b.dataset.id);
       if (!p) return;
-      updateDay(k, (d) => d.food.push({ name: p.name, kcal: p.kcal || 0, protein: p.protein || 0 }));
+      updateDay(k, (d) => d.food.push({ name: p.name, grams: null, kcal: p.kcal || 0, protein: p.protein || 0, source: 'preset' }));
       vibrate(20);
       toast(`${p.name} נוסף`);
       return ctx.rerender();
@@ -103,7 +165,7 @@ async function onClick(e, ctx) {
       if (!name && kcal === null && protein === null) return invalid(q('name'), 'יש להזין שם או ערכים');
       if (q('save').checked && !name) return invalid(q('name'), 'כדי לשמור ארוחה קבועה יש לתת לה שם');
       const item = { name: name || 'ללא שם', kcal: Math.max(0, kcal || 0), protein: Math.max(0, protein || 0) };
-      updateDay(k, (d) => d.food.push(item));
+      updateDay(k, (d) => d.food.push({ ...item, grams: null, source: 'manual' }));
       if (q('save').checked) upsertPreset({ ...item });
       vibrate(20);
       toast('נוסף');

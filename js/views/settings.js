@@ -1,6 +1,7 @@
 // "הגדרות" tab: goals, exercise editor, backup / restore, delete all data, version.
-import { getState, updateSettings, resetAll } from '../storage.js';
-import { icon, toast, confirmDialog, invalid } from '../ui.js';
+import { getState, updateSettings, resetAll, upsertCustomFood, deleteCustomFood } from '../storage.js';
+import { icon, esc, num, toast, confirmDialog, invalid } from '../ui.js';
+import { productSheet } from '../foodSheets.js';
 import { SETTINGS_FIELDS, fieldHTML, validateField } from './wizard.js';
 import { exerciseEditorHTML, handleExerciseAction } from '../exerciseEditor.js';
 import { exportBackup, readBackupFile, restoreBackup } from '../export.js';
@@ -26,6 +27,7 @@ export function render(root, ctx) {
       <div class="card-head">${icon('dumbbell', 'head-ic')}<h2>תרגילים</h2></div>
       ${exerciseEditorHTML()}
     </section>
+    ${productsCard()}
     <section class="card">
       <div class="card-head">${icon('download', 'head-ic')}<h2>גיבוי</h2></div>
       <p class="muted small">הנתונים נשמרים רק במכשיר הזה. מומלץ לייצא גיבוי מדי פעם.</p>
@@ -39,10 +41,31 @@ export function render(root, ctx) {
       <div class="card-head">${icon('alert', 'head-ic')}<h2>אזור מסוכן</h2></div>
       <button type="button" class="btn danger block press" data-action="wipe">${icon('trash')}<span>מחיקת כל הנתונים</span></button>
     </section>
-    <p class="version">70 · גרסה <bdi class="num">${APP_VERSION}</bdi></p>`;
+    <p class="version">70 · גרסה <bdi class="num">${APP_VERSION}</bdi><br>
+      מאגר המזון: רשימה מובנית של מזונות נפוצים בישראל, ערכים לפי USDA FoodData Central ·
+      ברקודים: Open Food Facts</p>`;
 
   root.onclick = (e) => onClick(e, ctx, root);
   root.onchange = (e) => onChange(e, ctx);
+}
+
+function productsCard() {
+  const list = getState().customFoods;
+  const rows = list
+    .map(
+      (p) => `<li class="list-row">
+        <div class="grow"><strong>${esc(p.name)}</strong>
+          <div class="muted small">${num(p.kcal100)} קק״ל · ${num(p.protein100)} ג׳ חלבון ל-100 ג׳${p.barcode ? ` · <bdi class="num">${esc(p.barcode)}</bdi>` : ''}</div></div>
+        <button type="button" class="icon-btn sm press" data-action="prod-edit" data-id="${p.id}" aria-label="עריכה">${icon('edit')}</button>
+        <button type="button" class="icon-btn sm press danger-ic" data-action="prod-del" data-id="${p.id}" aria-label="מחיקה">${icon('trash')}</button>
+      </li>`
+    )
+    .join('');
+  return `<section class="card">
+    <div class="card-head">${icon('box', 'head-ic')}<h2>המוצרים שלי</h2><span class="muted small">${num(list.length)}</span></div>
+    ${rows ? `<ul class="list">${rows}</ul>` : '<p class="muted small">מוצרים שנסרקו או שהוספתם יופיעו כאן, ויעבדו גם בלי אינטרנט.</p>'}
+    <button type="button" class="btn secondary block press" data-action="prod-add">${icon('plus')}<span>מוצר חדש</span></button>
+  </section>`;
 }
 
 function onChange(e, ctx) {
@@ -72,6 +95,26 @@ async function onClick(e, ctx, root) {
     return;
   }
   switch (a) {
+    case 'prod-add':
+    case 'prod-edit': {
+      const product = a === 'prod-edit' ? getState().customFoods.find((p) => p.id === b.dataset.id) : {};
+      if (!product) return;
+      const res = await productSheet({ title: a === 'prod-add' ? 'מוצר חדש' : 'עריכת מוצר', product });
+      if (res) {
+        upsertCustomFood(res.product);
+        toast('נשמר');
+        ctx.rerender();
+      }
+      return;
+    }
+    case 'prod-del': {
+      const p = getState().customFoods.find((x) => x.id === b.dataset.id);
+      if (p && (await confirmDialog(`למחוק את "${p.name}" מהמוצרים שלי?`, { title: 'מחיקת מוצר', ok: 'מחיקה', danger: true }))) {
+        deleteCustomFood(p.id);
+        ctx.rerender();
+      }
+      return;
+    }
     case 'export':
       exportBackup();
       toast('קובץ הגיבוי נוצר');

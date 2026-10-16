@@ -2,12 +2,17 @@
 // Every read/write is wrapped in try/catch so a full or blocked storage never crashes the app.
 
 export const STORAGE_KEY = 'seventy.v1';
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
+// Versions accepted when loading or importing (older ones are migrated).
+const SUPPORTED_VERSIONS = [1, 2];
 
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export function blankState() {
-  return { schemaVersion: SCHEMA_VERSION, settings: null, exercises: [], mealPresets: [], days: {}, weights: [] };
+  return {
+    schemaVersion: SCHEMA_VERSION, settings: null, exercises: [], mealPresets: [], days: {}, weights: [],
+    customFoods: [], foodMemory: {},
+  };
 }
 
 export function blankDay() {
@@ -16,10 +21,25 @@ export function blankDay() {
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-/** Coerce any parsed object into a well-formed state (missing fields get defaults). */
+/**
+ * Coerce any parsed object into a well-formed v2 state (missing fields get defaults).
+ * v1 → v2 migration is additive: customFoods / foodMemory are added, old food log
+ * entries ({name, kcal, protein}) stay valid as-is.
+ */
 export function normalize(d) {
   const s = blankState();
   if (!isObj(d)) return s;
+  s.customFoods = Array.isArray(d.customFoods)
+    ? d.customFoods.filter((f) => isObj(f) && f.id && f.name).map((f) => ({
+      id: f.id,
+      name: String(f.name),
+      barcode: f.barcode ? String(f.barcode) : null,
+      kcal100: Number(f.kcal100) || 0,
+      protein100: Number(f.protein100) || 0,
+      servingGrams: Number(f.servingGrams) > 0 ? Number(f.servingGrams) : null,
+    }))
+    : [];
+  s.foodMemory = isObj(d.foodMemory) ? { ...d.foodMemory } : {};
   s.settings = isObj(d.settings) ? { ...d.settings } : null;
   s.exercises = Array.isArray(d.exercises) ? d.exercises.filter((e) => isObj(e) && e.id && e.name) : [];
   s.mealPresets = Array.isArray(d.mealPresets) ? d.mealPresets.filter((m) => isObj(m) && m.id) : [];
@@ -46,13 +66,14 @@ export function normalize(d) {
 /** Returns an error message (Hebrew) or null when the backup looks valid. */
 export function validateBackup(d) {
   if (!isObj(d)) return 'הקובץ אינו גיבוי תקין';
-  if (d.schemaVersion !== SCHEMA_VERSION) return 'גרסת הגיבוי אינה נתמכת';
+  if (!SUPPORTED_VERSIONS.includes(d.schemaVersion)) return 'גרסת הגיבוי אינה נתמכת';
   if (d.settings !== null && !isObj(d.settings)) return 'מבנה ההגדרות בקובץ שגוי';
   if (!Array.isArray(d.exercises) || !Array.isArray(d.mealPresets) || !Array.isArray(d.weights)) {
     return 'מבנה הקובץ שגוי';
   }
   if (!isObj(d.days)) return 'מבנה הימים בקובץ שגוי';
   if (Object.keys(d.days).some((k) => !DAY_KEY_RE.test(k))) return 'תאריך לא תקין בקובץ';
+  if (d.schemaVersion >= 2 && (!Array.isArray(d.customFoods) || !isObj(d.foodMemory))) return 'מבנה המזון בקובץ שגוי';
   return null;
 }
 
@@ -64,14 +85,18 @@ export function setSaveErrorHandler(fn) {
 function load() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? normalize(JSON.parse(raw)) : blankState();
+    if (!raw) return { data: blankState(), migrated: false };
+    const parsed = JSON.parse(raw);
+    return { data: normalize(parsed), migrated: parsed?.schemaVersion !== SCHEMA_VERSION };
   } catch (e) {
     console.warn('Failed to load data', e);
-    return blankState();
+    return { data: blankState(), migrated: false };
   }
 }
 
-let state = load();
+const loaded = load();
+let state = loaded.data;
+if (loaded.migrated) save(); // persist the migrated v2 shape once
 
 export function getState() {
   return state;
@@ -191,5 +216,37 @@ export function addWeight(date, kg) {
 
 export function deleteWeight(index) {
   state.weights.splice(index, 1);
+  save();
+}
+
+/* ---------- Custom foods (user's own products) & food memory ---------- */
+
+export function upsertCustomFood(f) {
+  const i = state.customFoods.findIndex((c) => c.id === f.id);
+  const m = { ...(i >= 0 ? state.customFoods[i] : {}), ...f };
+  // Fixed key order, matching normalize(), so backups round-trip byte-identically.
+  const out = {
+    id: m.id || uid(), name: m.name, barcode: m.barcode || null,
+    kcal100: m.kcal100, protein100: m.protein100, servingGrams: m.servingGrams || null,
+  };
+  if (i >= 0) state.customFoods[i] = out;
+  else state.customFoods.push(out);
+  save();
+  return out;
+}
+
+export function deleteCustomFood(id) {
+  state.customFoods = state.customFoods.filter((c) => c.id !== id);
+  save();
+}
+
+export function customFoodByBarcode(code) {
+  return state.customFoods.find((c) => c.barcode && c.barcode === code) || null;
+}
+
+/** Remember the last amount/unit for a food and count how often it was eaten. */
+export function rememberFood(key, amount, unit) {
+  const prev = state.foodMemory[key];
+  state.foodMemory[key] = { amount, unit, count: (prev?.count || 0) + 1 };
   save();
 }

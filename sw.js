@@ -1,5 +1,5 @@
 // Service worker: cache-first for app files and the Heebo font. Versioned cache; old caches removed.
-const CACHE_VERSION = '1.0.0';
+const CACHE_VERSION = '1.1.0';
 const CACHE = `seventy-${CACHE_VERSION}`;
 
 const APP_FILES = [
@@ -17,6 +17,9 @@ const APP_FILES = [
   './js/export.js',
   './js/timer.js',
   './js/exerciseEditor.js',
+  './js/foods.js',
+  './js/foodSheets.js',
+  './js/scanner.js',
   './js/views/today.js',
   './js/views/food.js',
   './js/views/trends.js',
@@ -27,6 +30,9 @@ const APP_FILES = [
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
 ];
+
+// data/foods.json is not precached: it loads lazily on first search and is then
+// cached by the fetch handler below, so it works offline afterwards.
 
 const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&display=swap';
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
