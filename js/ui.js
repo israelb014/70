@@ -38,6 +38,7 @@ const P = {
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
   keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="3"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M8 14h8"/>',
   box: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
+  bed: '<path d="M3 18V6M3 14h18v4M21 14v-2.5a3 3 0 0 0-3-3h-7v5.5"/><circle cx="7" cy="11" r="1.8"/>',
   alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.5h.01"/>',
 };
 
@@ -81,13 +82,33 @@ export function parseNum(v) {
 /* ---------- Toast ---------- */
 
 let toastTimer;
-export function toast(msg) {
+export function toast(msg, { iconHTML = icon('check'), duration = 2200, big = false } = {}) {
   const el = document.getElementById('toast');
   if (!el) return;
-  el.innerHTML = `${icon('check')}<span>${esc(msg)}</span>`;
+  el.innerHTML = `${iconHTML}<span>${esc(msg)}</span>`;
+  el.classList.toggle('big', big);
   el.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+
+// Sequential toasts (e.g. several badges unlocked at once) so none overwrites another.
+const toastQueue = [];
+let queueBusy = false;
+export function queueToast(msg, opts = {}) {
+  toastQueue.push([msg, opts]);
+  if (!queueBusy) runQueue();
+}
+function runQueue() {
+  const next = toastQueue.shift();
+  if (!next) {
+    queueBusy = false;
+    return;
+  }
+  queueBusy = true;
+  const duration = next[1].duration || 2800;
+  toast(next[0], { ...next[1], duration });
+  setTimeout(runQueue, duration + 350);
 }
 
 /* ---------- Bottom sheet dialogs ---------- */
@@ -219,14 +240,14 @@ export function primeAudio() {
 
 /* ---------- Day navigation header (shared by "היום" and "אוכל") ---------- */
 
-export function dateNav(k, title) {
+export function dateNav(k, title, eyebrowHTML = '') {
   const rel = relativeLabel(k);
   const isToday = k >= todayKey();
   // RTL: the first button sits on the right and goes back in time.
   return `<header class="date-nav">
     <button type="button" class="icon-btn press" data-action="date-prev" aria-label="היום הקודם">${icon('chevR')}</button>
     <div class="date-nav-label">
-      <span class="eyebrow">${esc(title)}</span>
+      ${eyebrowHTML || `<span class="eyebrow">${esc(title)}</span>`}
       <h1>${esc(rel || longLabel(k))}</h1>
       ${rel ? `<span class="muted small">${esc(longLabel(k))}</span>` : '<button type="button" class="link-btn" data-action="date-today">חזרה להיום</button>'}
     </div>

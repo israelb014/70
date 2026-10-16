@@ -11,6 +11,7 @@ import {
 } from '../stats.js';
 import { runTimer } from '../timer.js';
 import { targetText } from '../exerciseEditor.js';
+import { levelInfo, sleepMinutes, fmtDuration, lastSleep } from '../progress.js';
 
 // Unicode isolate for numbers inside plain-text (non-HTML) RTL strings.
 const iso = (s) => `⁦${s}⁩`;
@@ -23,9 +24,10 @@ export function render(root, ctx) {
   const badge = (id) => (rec.has(id) ? `<span class="badge">${icon('trophy')}<span>שיא חדש</span></span>` : '');
 
   root.innerHTML = `
-    ${dateNav(k, '70')}
+    ${dateNav(k, '70', levelChip())}
     ${heroCard(k, day)}
     ${stepsCard(day, st, badge)}
+    ${sleepCard(day, st)}
     ${stairsCard(day, st, badge)}
     ${ridesCard(day, st, badge)}
     ${exerciseCards(k, day, ctx, rec)}
@@ -36,9 +38,60 @@ export function render(root, ctx) {
 
   root.onclick = (e) => onClick(e, ctx);
   root.onchange = (e) => onChange(e, ctx);
+  root.oninput = (e) => {
+    if (e.target.dataset.sleep) previewSleep(root);
+  };
 }
 
 /* ---------- Cards ---------- */
+
+/** Small level ring in the header; opens the "הישגים" screen. */
+function levelChip() {
+  const L = levelInfo();
+  return `<button type="button" class="level-chip press" data-action="achievements" aria-label="רמה ${L.level} · הישגים">
+    ${ring({ id: 'level-chip', size: 36, stroke: 4, frac: L.frac, inner: `<span class="level-chip-num">${num(L.level)}</span>` })}
+    <span>רמה ${num(L.level)}</span>
+  </button>`;
+}
+
+function sleepCard(day, st) {
+  const target = st.sleepTarget || 8;
+  const s = day.sleep;
+  const pre = s || lastSleep() || { bed: '23:00', wake: '07:00' };
+  const min = s ? sleepMinutes(s) : 0;
+  return `<section class="card">
+    <div class="card-head">${icon('bed', 'head-ic')}<h2>שינה</h2>
+      ${s ? `<button type="button" class="icon-btn sm press danger-ic" data-action="sleep-del" aria-label="מחיקת שינה">${icon('trash')}</button>` : ''}</div>
+    <div class="row">
+      ${ring({
+        id: 'sleep', size: 108, stroke: 11, frac: min / (target * 60),
+        color: min >= target * 60 ? 'var(--success)' : 'var(--protein)',
+        inner: `<div class="ring-mid">${num(fmtDuration(min))}</div><div class="muted xs">שעות</div>`,
+      })}
+      <div class="grow">
+        <div class="stat-num">${s ? num(fmtDuration(min)) : '–'}<small> שעות</small></div>
+        <div class="muted small" data-sleep-preview>${s ? '' : 'עוד לא נרשם · '}משך ${num(fmtDuration(sleepMinutes(pre)))} · יעד ${num(target)} שעות</div>
+      </div>
+    </div>
+    <div class="field-grid">
+      <label class="field"><span>הלכתי לישון</span><input type="time" data-sleep="bed" value="${pre.bed}"></label>
+      <label class="field"><span>קמתי</span><input type="time" data-sleep="wake" value="${pre.wake}"></label>
+    </div>
+    <button type="button" class="btn secondary block press" data-action="sleep-save">${icon('check')}<span>${s ? 'עדכון שינה' : 'שמירת שינה'}</span></button>
+  </section>`;
+}
+
+function readSleep(root) {
+  const bed = root.querySelector('[data-sleep=bed]')?.value;
+  const wake = root.querySelector('[data-sleep=wake]')?.value;
+  return bed && wake ? { bed, wake } : null;
+}
+
+function previewSleep(root) {
+  const s = readSleep(root);
+  const el = root.querySelector('[data-sleep-preview]');
+  if (el && s) el.innerHTML = `משך ${num(fmtDuration(sleepMinutes(s)))} · יעד ${num(getState().settings.sleepTarget || 8)} שעות`;
+}
 
 function heroCard(k, day) {
   const c = dayCompletion(k);
@@ -251,6 +304,7 @@ async function onClick(e, ctx) {
   const k = ctx.date;
   const st = getState().settings;
   const rerender = () => ctx.rerender();
+  const root = () => b.closest('#app') || document;
 
   if (handleDateNav(a, ctx)) return rerender();
 
@@ -324,6 +378,19 @@ async function onClick(e, ctx) {
       if (ex && input) await saveManual(ctx, ex, input);
       return;
     }
+    case 'achievements':
+      return ctx.goTab('achievements');
+    case 'sleep-save': {
+      const sl = readSleep(root());
+      if (!sl || !sleepMinutes(sl)) return invalid(root().querySelector('[data-sleep=wake]'), 'שעות שינה לא תקינות');
+      updateDay(k, (d) => (d.sleep = sl));
+      vibrate(20);
+      toast(`נשמרו ${fmtDuration(sleepMinutes(sl))} שעות שינה`);
+      return rerender();
+    }
+    case 'sleep-del':
+      updateDay(k, (d) => (d.sleep = null));
+      return rerender();
     case 'rest':
       updateDay(k, (d) => (d.rest = !d.rest));
       if (getDay(k).rest) vibrate(30);

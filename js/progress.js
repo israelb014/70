@@ -1,0 +1,209 @@
+// Derived progress: sleep math, heatmap day score, XP / levels and badges.
+// Everything here is computed from history on demand — nothing is stored — so editing
+// a past day recalculates XP, levels and badge dates automatically.
+import { getState, getDay, exerciseById } from './storage.js';
+import { todayKey, addDays, lastNDays } from './dates.js';
+import { exerciseProgress, dayCompletion, isDayActive, foodTotals } from './stats.js';
+
+/* ---------- Sleep ---------- */
+
+const toMin = (t) => {
+  const [h, m] = t.split(':').map(Number);
+  return h * 60 + m;
+};
+
+/** Sleep duration in minutes; handles crossing midnight (bed 23:30 → wake 06:50 = 440). */
+export function sleepMinutes(sleep) {
+  if (!sleep?.bed || !sleep?.wake) return 0;
+  return (toMin(sleep.wake) - toMin(sleep.bed) + 1440) % 1440;
+}
+
+/** "7:20" */
+export function fmtDuration(min) {
+  const m = Math.round(min);
+  return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/** Average clock time of bedtimes; times after noon count as "the evening before" so 23:00 and 01:00 average to 00:00. */
+export function averageBedtime(beds) {
+  if (!beds.length) return null;
+  const vals = beds.map((t) => {
+    const m = toMin(t);
+    return m < 12 * 60 ? m + 1440 : m;
+  });
+  const avg = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) % 1440;
+  return `${String(Math.floor(avg / 60)).padStart(2, '0')}:${String(avg % 60).padStart(2, '0')}`;
+}
+
+export function sleepTargetMet(day, settings) {
+  return !!day?.sleep && sleepMinutes(day.sleep) >= (settings.sleepTarget || 8) * 60;
+}
+
+/** Most recently logged sleep (for prefilling the pickers). */
+export function lastSleep() {
+  const days = getState().days;
+  const k = Object.keys(days).filter((d) => days[d].sleep).sort().pop();
+  return k ? days[k].sleep : null;
+}
+
+/* ---------- Heatmap score ---------- */
+
+/** 0..1 = average of exercise completion, steps, climbs and protein vs targets (each capped at 1). */
+export function dayScore(k) {
+  const day = getState().days[k];
+  if (!day) return 0;
+  const st = getState().settings;
+  const part = (v, t) => (t > 0 ? Math.min(1, (v || 0) / t) : 0);
+  const parts = [
+    dayCompletion(k).fraction,
+    part(day.steps, st.stepsTarget),
+    part(day.climbs.length, st.climbsTarget),
+    part(foodTotals(k).protein, st.proteinTarget),
+  ];
+  return parts.reduce((a, b) => a + b, 0) / 4;
+}
+
+/* ---------- XP ---------- */
+
+export function dayXP(k) {
+  const day = getState().days[k];
+  if (!day) return 0;
+  const st = getState().settings;
+  let xp = 0;
+  for (const [id, entry] of Object.entries(day.exercises || {})) {
+    const ex = exerciseById(id);
+    if (!ex || !entry) continue;
+    if (ex.type === 'setsReps') xp += 2 * (entry.sets || []).filter((s) => s.done).length;
+    else if (ex.type === 'timed') xp += exerciseProgress(ex, entry) >= 1 ? 5 : 0;
+    else xp += entry.reps > 0 ? 3 : 0;
+  }
+  xp += Math.floor((day.steps || 0) / 1000);
+  for (const c of day.climbs || []) xp += c.type === 'roof' ? 5 : 3;
+  for (const r of day.rides || []) xp += 2 * Math.floor(Number(r.km) || 0);
+  if (st.proteinTarget && foodTotals(k).protein >= st.proteinTarget) xp += 10;
+  const comp = dayCompletion(k);
+  if (comp.total > 0 && comp.done === comp.total) xp += 20;
+  if (day.sleep) xp += 2;
+  return xp;
+}
+
+/** XP for a date range [from, to] (inclusive), including weigh-ins (5 XP each). */
+export function xpBetween(from, to) {
+  let xp = 0;
+  for (const k of Object.keys(getState().days)) if (k >= from && k <= to) xp += dayXP(k);
+  xp += 5 * getState().weights.filter((w) => w.date >= from && w.date <= to).length;
+  return xp;
+}
+
+export function totalXP() {
+  return xpBetween('0000-00-00', '9999-12-31');
+}
+
+export function weekXP() {
+  const keys = lastNDays(7);
+  return xpBetween(keys[0], keys[6]);
+}
+
+/** Level n needs 50·n·(n+1) total XP to reach level n+1 (level 1 starts at 0). */
+export const xpForLevel = (n) => 50 * (n - 1) * n;
+
+export function levelInfo(xp = totalXP()) {
+  let level = 1;
+  while (xp >= xpForLevel(level + 1)) level++;
+  const base = xpForLevel(level);
+  const next = xpForLevel(level + 1);
+  return { level, xp, base, next, toNext: next - xp, frac: (xp - base) / (next - base) };
+}
+
+/* ---------- Badges ---------- */
+
+// metric: key of a running maximum computed day by day in walkHistory()
+export const BADGES = [
+  { id: 'first', family: 'first', tier: '1', name: 'אימון ראשון', desc: 'היום הראשון עם תרגיל שהושלם.', metric: 'workoutDays', target: 1 },
+  ...[7, 14, 30, 60, 100].map((n) => ({
+    id: `streak${n}`, family: 'streak', tier: String(n), name: `רצף ${n}`, desc: `${n} ימי פעילות ברצף (ימי מנוחה נספרים).`, metric: 'streak', target: n,
+  })),
+  ...[5, 10, 15, 20, 25, 30].map((n) => ({
+    id: `kg${n}`, family: 'weight', tier: String(n), name: `${n} ק״ג ירדו`, desc: `ירידה של ${n} ק״ג מהמשקל ההתחלתי (לפי השקילה הנמוכה ביותר).`, metric: 'kgLost', target: n, unit: 'ק״ג',
+  })),
+  ...[30, 45, 60].map((n) => ({
+    id: `ride${n}`, family: 'ride', tier: String(n), name: `רכיבת ${n}`, desc: `רכיבה אחת של לפחות ${n} ק״מ.`, metric: 'rideMax', target: n, unit: 'ק״מ',
+  })),
+  ...[100, 500, 1000].map((n) => ({
+    id: `climbs${n}`, family: 'climbs', tier: n >= 1000 ? '1K' : String(n), name: `${n.toLocaleString('he-IL')} עליות`, desc: `${n.toLocaleString('he-IL')} עליות מדרגות בסך הכול.`, metric: 'climbsTotal', target: n,
+  })),
+  { id: 'steps1m', family: 'steps', tier: '1M', name: 'מיליון צעדים', desc: 'מיליון צעדים בסך הכול.', metric: 'stepsTotal', target: 1000000 },
+  ...[30, 40, 50].map((n) => ({
+    id: `pushups${n}`, family: 'pushups', tier: String(n), name: `${n} שכיבות`, desc: `${n} חזרות בסט אחד של תרגיל ששמו כולל "שכיבות".`, metric: 'pushupMax', target: n,
+  })),
+  ...[90, 120].map((n) => ({
+    id: `plank${n}`, family: 'plank', tier: String(n), name: `פלאנק ${n}`, desc: `החזקה של ${n} שניות בתרגיל ששמו כולל "פלאנק".`, metric: 'plankMax', target: n, unit: 'שנ׳',
+  })),
+  { id: 'proteinWeek', family: 'protein', tier: '7', name: 'שבוע חלבון', desc: 'עמידה ביעד החלבון 7 ימים ברצף.', metric: 'proteinStreak', target: 7 },
+  { id: 'sleepWeek', family: 'sleep', tier: '7', name: 'ישן כמו שצריך', desc: 'עמידה ביעד השינה 7 לילות ברצף.', metric: 'sleepStreak', target: 7 },
+];
+
+/**
+ * Walk every calendar day from the first record to today, tracking running maxima.
+ * Returns the final metrics, the earned date of each badge, and the longest activity streak.
+ */
+export function walkHistory() {
+  const state = getState();
+  const st = state.settings;
+  const dayKeys = Object.keys(state.days).sort();
+  const weights = [...state.weights].sort((a, b) => a.date.localeCompare(b.date));
+  const first = [dayKeys[0], weights[0]?.date].filter(Boolean).sort()[0];
+  const m = {
+    workoutDays: 0, streak: 0, kgLost: 0, rideMax: 0, climbsTotal: 0, stepsTotal: 0,
+    pushupMax: 0, plankMax: 0, proteinStreak: 0, sleepStreak: 0,
+  };
+  const earned = {};
+  if (!first) return { metrics: m, earned, longestStreak: 0 };
+
+  let run = 0, proteinRun = 0, sleepRun = 0, wi = 0, minKg = Infinity;
+  const end = todayKey();
+  for (let k = first; k <= end; k = addDays(k, 1)) {
+    const day = state.days[k];
+    // Streak (today not yet active doesn't break it, but it can't extend it either)
+    run = isDayActive(k) ? run + 1 : 0;
+    m.streak = Math.max(m.streak, run);
+    if (day) {
+      const anyDone = Object.entries(day.exercises || {}).some(([id, e]) => {
+        const ex = exerciseById(id);
+        return ex && exerciseProgress(ex, e) >= 1;
+      });
+      if (anyDone) m.workoutDays++;
+      for (const r of day.rides || []) m.rideMax = Math.max(m.rideMax, Number(r.km) || 0);
+      m.climbsTotal += (day.climbs || []).length;
+      m.stepsTotal += day.steps || 0;
+      for (const [id, e] of Object.entries(day.exercises || {})) {
+        const ex = exerciseById(id);
+        if (!ex || !e) continue;
+        if (ex.name.includes('שכיבות')) {
+          const reps = ex.type === 'setsReps'
+            ? Math.max(0, ...(e.sets || []).filter((s) => s.done).map((s) => s.reps || 0))
+            : ex.type === 'maxReps' ? e.reps || 0 : 0;
+          m.pushupMax = Math.max(m.pushupMax, reps);
+        }
+        if (ex.type === 'timed' && ex.name.includes('פלאנק')) m.plankMax = Math.max(m.plankMax, e.seconds || 0);
+      }
+    }
+    proteinRun = st.proteinTarget && day && foodTotals(k).protein >= st.proteinTarget ? proteinRun + 1 : 0;
+    m.proteinStreak = Math.max(m.proteinStreak, proteinRun);
+    sleepRun = sleepTargetMet(day, st) ? sleepRun + 1 : 0;
+    m.sleepStreak = Math.max(m.sleepStreak, sleepRun);
+    while (wi < weights.length && weights[wi].date <= k) minKg = Math.min(minKg, weights[wi++].kg);
+    if (minKg < Infinity && st.startWeight) m.kgLost = Math.max(m.kgLost, Math.round((st.startWeight - minKg) * 10) / 10);
+
+    for (const b of BADGES) if (!earned[b.id] && m[b.metric] >= b.target) earned[b.id] = k;
+  }
+  return { metrics: m, earned, longestStreak: m.streak };
+}
+
+/** All badges with state: { ...badge, earned (date|null), value, frac }. */
+export function badgeStates(walk = walkHistory()) {
+  return BADGES.map((b) => {
+    const value = walk.metrics[b.metric];
+    return { ...b, earned: walk.earned[b.id] || null, value, frac: Math.min(1, value / b.target) };
+  });
+}

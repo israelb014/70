@@ -5,6 +5,9 @@ import { icon, esc, num, parseNum, toast, openSheet, confirmDialog, invalid } fr
 import { lastNDays, todayKey, shortDate } from '../dates.js';
 import { computeRecords, foodTotals } from '../stats.js';
 import { weeklySummary, copyText } from '../export.js';
+import { heatmapCard, bindHeatmap } from '../heatmap.js';
+import { levelInfo, weekXP, badgeStates, sleepMinutes, fmtDuration, averageBedtime } from '../progress.js';
+import { medallion } from '../badgeArt.js';
 
 export function render(root, ctx) {
   const st = getState().settings;
@@ -13,6 +16,8 @@ export function render(root, ctx) {
 
   root.innerHTML = `
     <header class="page-head"><span class="eyebrow">70</span><h1>מגמות</h1></header>
+    ${heatmapCard()}
+    ${achievementsCard()}
     ${weightCard(st, weights)}
     <section class="card">
       <div class="card-head">${icon('steps', 'head-ic')}<h2>צעדים · 7 ימים</h2></div>
@@ -24,11 +29,49 @@ export function render(root, ctx) {
       ${barChart({ keys, values: keys.map((k) => foodTotals(k).protein), target: st.proteinTarget, color: 'var(--protein)' })}
       <p class="legend"><span class="lg-line"></span>יעד ${num(st.proteinTarget || 0)} ג׳</p>
     </section>
+    ${sleepTrendCard(st, keys)}
     ${recordsCard()}
     <button type="button" class="btn primary block press" data-action="copy-summary">${icon('copy')}<span>העתק סיכום שבועי</span></button>`;
 
   root.onclick = (e) => onClick(e, ctx);
   root.onchange = null;
+  bindHeatmap(root, (k) => {
+    ctx.date = k;
+    ctx.goTab('today');
+  });
+}
+
+function achievementsCard() {
+  const L = levelInfo();
+  const badges = badgeStates();
+  const earned = badges.filter((b) => b.earned).sort((a, b) => b.earned.localeCompare(a.earned));
+  return `<button type="button" class="card ach-card press" data-action="achievements">
+    ${ring({ id: 'level-trends', size: 76, stroke: 8, frac: L.frac, inner: `<div class="ring-mid">${num(L.level)}</div>` })}
+    <div class="grow">
+      <h2>הישגים · רמה ${num(L.level)}</h2>
+      <div class="muted small">${num(L.xp)} XP · עוד ${num(L.toNext)} לרמה הבאה · ${num(weekXP())} ב-7 ימים</div>
+      <div class="ach-medals">${earned.slice(0, 5).map((b) => medallion(b, true, 30)).join('') || '<span class="muted small">עוד אין תגים</span>'}
+        <span class="muted small">${num(earned.length)}/${num(badges.length)}</span></div>
+    </div>
+    ${icon('chevL')}
+  </button>`;
+}
+
+function sleepTrendCard(st, keys) {
+  const target = st.sleepTarget || 8;
+  const logged = keys.map((k) => getDay(k).sleep).filter(Boolean);
+  const hours = keys.map((k) => sleepMinutes(getDay(k).sleep) / 60);
+  const avgMin = logged.length ? logged.reduce((a, s) => a + sleepMinutes(s), 0) / logged.length : 0;
+  const avgBed = averageBedtime(logged.map((s) => s.bed));
+  return `<section class="card">
+    <div class="card-head">${icon('bed', 'head-ic')}<h2>שינה · 7 ימים</h2></div>
+    ${barChart({ keys, values: hours, target, color: 'var(--protein)', format: (v) => fmtDuration(v * 60) })}
+    <p class="legend"><span class="lg-line"></span>יעד ${num(target)} שעות</p>
+    <div class="hm-stats">
+      <div><span class="stat-num">${logged.length ? num(fmtDuration(avgMin)) : '–'}</span><span class="muted small">ממוצע שעות שינה</span></div>
+      <div><span class="stat-num">${avgBed ? num(avgBed) : '–'}</span><span class="muted small">שעת שינה ממוצעת</span></div>
+    </div>
+  </section>`;
 }
 
 function weightCard(st, weights) {
@@ -91,6 +134,8 @@ async function onClick(e, ctx) {
   const b = e.target.closest('[data-action]');
   if (!b) return;
   switch (b.dataset.action) {
+    case 'achievements':
+      return ctx.goTab('achievements');
     case 'weight-add': {
       const last = getState().weights.at(-1)?.kg ?? getState().settings.startWeight;
       const res = await openSheet({

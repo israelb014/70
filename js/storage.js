@@ -2,9 +2,10 @@
 // Every read/write is wrapped in try/catch so a full or blocked storage never crashes the app.
 
 export const STORAGE_KEY = 'seventy.v1';
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 // Versions accepted when loading or importing (older ones are migrated).
-const SUPPORTED_VERSIONS = [1, 2];
+const SUPPORTED_VERSIONS = [1, 2, 3];
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -12,19 +13,22 @@ export function blankState() {
   return {
     schemaVersion: SCHEMA_VERSION, settings: null, exercises: [], mealPresets: [], days: {}, weights: [],
     customFoods: [], foodMemory: {},
+    // lastSeenLevel === null means "not initialised yet" (fresh install or migrated data).
+    meta: { lastSeenLevel: null, seenBadges: [] },
   };
 }
 
 export function blankDay() {
-  return { rest: false, steps: null, climbs: [], rides: [], exercises: {}, food: [] };
+  return { rest: false, steps: null, climbs: [], rides: [], exercises: {}, food: [], sleep: null };
 }
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /**
  * Coerce any parsed object into a well-formed v2 state (missing fields get defaults).
- * v1 → v2 migration is additive: customFoods / foodMemory are added, old food log
- * entries ({name, kcal, protein}) stay valid as-is.
+ * Migrations are additive:
+ *   v1 → v2: customFoods / foodMemory added; old food entries ({name, kcal, protein}) stay valid.
+ *   v2 → v3: settings.sleepTarget (default 8), days[].sleep, meta { lastSeenLevel, seenBadges }.
  */
 export function normalize(d) {
   const s = blankState();
@@ -41,6 +45,13 @@ export function normalize(d) {
     : [];
   s.foodMemory = isObj(d.foodMemory) ? { ...d.foodMemory } : {};
   s.settings = isObj(d.settings) ? { ...d.settings } : null;
+  if (s.settings && !(Number(s.settings.sleepTarget) > 0)) s.settings.sleepTarget = 8;
+  if (isObj(d.meta)) {
+    s.meta = {
+      lastSeenLevel: Number.isFinite(d.meta.lastSeenLevel) ? d.meta.lastSeenLevel : null,
+      seenBadges: Array.isArray(d.meta.seenBadges) ? d.meta.seenBadges.filter((b) => typeof b === 'string') : [],
+    };
+  }
   s.exercises = Array.isArray(d.exercises) ? d.exercises.filter((e) => isObj(e) && e.id && e.name) : [];
   s.mealPresets = Array.isArray(d.mealPresets) ? d.mealPresets.filter((m) => isObj(m) && m.id) : [];
   s.weights = Array.isArray(d.weights)
@@ -57,6 +68,8 @@ export function normalize(d) {
         rides: Array.isArray(day.rides) ? day.rides.filter(isObj) : b.rides,
         exercises: isObj(day.exercises) ? day.exercises : b.exercises,
         food: Array.isArray(day.food) ? day.food.filter(isObj) : b.food,
+        sleep: isObj(day.sleep) && TIME_RE.test(day.sleep.bed) && TIME_RE.test(day.sleep.wake)
+          ? { bed: day.sleep.bed, wake: day.sleep.wake } : null,
       };
     }
   }
@@ -74,6 +87,7 @@ export function validateBackup(d) {
   if (!isObj(d.days)) return 'מבנה הימים בקובץ שגוי';
   if (Object.keys(d.days).some((k) => !DAY_KEY_RE.test(k))) return 'תאריך לא תקין בקובץ';
   if (d.schemaVersion >= 2 && (!Array.isArray(d.customFoods) || !isObj(d.foodMemory))) return 'מבנה המזון בקובץ שגוי';
+  if (d.schemaVersion >= 3 && d.meta !== undefined && !isObj(d.meta)) return 'מבנה הנתונים בקובץ שגוי';
   return null;
 }
 
@@ -248,5 +262,12 @@ export function customFoodByBarcode(code) {
 export function rememberFood(key, amount, unit) {
   const prev = state.foodMemory[key];
   state.foodMemory[key] = { amount, unit, count: (prev?.count || 0) + 1 };
+  save();
+}
+
+/* ---------- Meta (what the user has already been shown) ---------- */
+
+export function updateMeta(patch) {
+  state.meta = { ...state.meta, ...patch };
   save();
 }

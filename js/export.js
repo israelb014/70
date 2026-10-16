@@ -3,6 +3,9 @@ import { getState, getDay, validateBackup, replaceState } from './storage.js';
 import { lastNDays, todayKey, shortDate, weekdayName } from './dates.js';
 import { computeRecords, exercisesForDay, foodTotals, floorsOf } from './stats.js';
 import { fmt } from './ui.js';
+import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES } from './progress.js';
+
+const iso = (s) => `\u2066${s}\u2069`; // keep times/ranges LTR inside Hebrew lines
 
 /* ---------- Weekly summary ---------- */
 
@@ -26,6 +29,9 @@ export function weeklySummary() {
       const t = exerciseLine(ex, entry);
       if (t) body.push(`${ex.name}: ${t}`);
     }
+    if (day.sleep) {
+      body.push(`שינה: ${iso(fmtDuration(sleepMinutes(day.sleep)))} שעות (${iso(`${day.sleep.bed}–${day.sleep.wake}`)})`);
+    }
     const ft = foodTotals(k);
     if (day.food.length) body.push(`אוכל: ${fmt(ft.kcal)} קק״ל · ${fmt(ft.protein)} ג׳ חלבון`);
     if (!body.length) body.push('אין נתונים');
@@ -46,6 +52,15 @@ export function weeklySummary() {
   if (events.length) {
     for (const e of events) lines.push(`• ${e.label}: ${fmt(e.value)} ${e.unit} (${shortDate(e.date)})`);
   } else lines.push('• אין שיאים חדשים השבוע');
+  lines.push('');
+
+  const walk = walkHistory();
+  const newBadges = BADGES.filter((b) => walk.earned[b.id] >= keys[0] && walk.earned[b.id] <= keys[6]);
+  lines.push(`רמה נוכחית: ${levelInfo().level}`);
+  lines.push(`XP השבוע: ${fmt(weekXP())}`);
+  lines.push('תגים חדשים השבוע:');
+  if (newBadges.length) for (const b of newBadges) lines.push(`• ${b.name} (${shortDate(walk.earned[b.id])})`);
+  else lines.push('• אין תגים חדשים השבוע');
 
   return lines.join('\n');
 }

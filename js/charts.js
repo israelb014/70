@@ -36,7 +36,7 @@ export function ring({ id, size = 120, stroke = 12, frac, color = 'var(--accent)
  * Vertical bar chart for 7 days. values: numbers (or null), keys: day keys.
  * Draws a dashed target line when a target is set.
  */
-export function barChart({ keys, values, target, color = 'var(--accent)' }) {
+export function barChart({ keys, values, target, color = 'var(--accent)', format = fmtShort }) {
   const W = 360, H = 190, top = 26, bottom = 34, side = 8;
   const max = Math.max(target || 0, ...values.map((v) => v || 0), 1) * 1.08;
   const plotH = H - top - bottom;
@@ -52,7 +52,7 @@ export function barChart({ keys, values, target, color = 'var(--accent)' }) {
     bars += `<rect class="bar" x="${(cx - bw / 2).toFixed(1)}" y="${(top + plotH - bh).toFixed(1)}" width="${bw.toFixed(1)}"
       height="${bh.toFixed(1)}" rx="${Math.min(8, bw / 2)}" fill="${met ? 'var(--success)' : color}" style="--i:${i}"/>`;
     if (val > 0) {
-      bars += `<text x="${cx}" y="${(top + plotH - bh - 7).toFixed(1)}" class="chart-val">${fmtShort(val)}</text>`;
+      bars += `<text x="${cx}" y="${(top + plotH - bh - 7).toFixed(1)}" class="chart-val">${format(val)}</text>`;
     }
     bars += `<text x="${cx}" y="${H - 16}" class="chart-lbl">${weekdayShort(keys[i])}</text>
       <text x="${cx}" y="${H - 2}" class="chart-sub">${shortDate(keys[i])}</text>`;

@@ -1,7 +1,11 @@
 // Entry point: tab routing, shared context and service worker registration.
-import { getState, setSaveErrorHandler } from './storage.js';
+import { getState, setSaveErrorHandler, updateMeta } from './storage.js';
 import { todayKey } from './dates.js';
-import { icon, toast, bindLongPress } from './ui.js';
+import { icon, toast, queueToast, bindLongPress } from './ui.js';
+import { levelInfo, walkHistory, BADGES } from './progress.js';
+import { medallion } from './badgeArt.js';
+import { celebrateLevel } from './celebrate.js';
+import * as achievements from './views/achievements.js';
 import * as today from './views/today.js';
 import * as food from './views/food.js';
 import * as trends from './views/trends.js';
@@ -14,6 +18,9 @@ const TABS = [
   { id: 'trends', label: 'מגמות', icon: 'trends', view: trends },
   { id: 'settings', label: 'הגדרות', icon: 'settings', view: settings },
 ];
+
+// Screens reachable without a tab of their own.
+const SCREENS = { achievements };
 
 const main = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -30,6 +37,7 @@ const ctx = {
     render();
   },
   goTab: (id) => {
+    if (SCREENS[id] && !SCREENS[ctx.tab]) ctx.prevTab = ctx.tab;
     ctx.tab = id;
     main.classList.remove('settled');
     render();
@@ -63,7 +71,36 @@ function render() {
   main.onkeydown = null;
   main.oninput = null;
   main.dataset.tab = ctx.tab;
-  TABS.find((t) => t.id === ctx.tab).view.render(main, ctx);
+  (SCREENS[ctx.tab] || TABS.find((t) => t.id === ctx.tab).view).render(main, ctx);
+  checkProgress();
+}
+
+/**
+ * Level-ups and new badges are shown once: lastSeenLevel / seenBadges remember what was shown.
+ * First run (fresh or migrated data): mark everything already earned as seen and show one summary.
+ */
+function checkProgress() {
+  const meta = getState().meta;
+  const walk = walkHistory();
+  const earned = BADGES.filter((b) => walk.earned[b.id]);
+  const { level } = levelInfo();
+
+  if (meta.lastSeenLevel === null) {
+    updateMeta({ lastSeenLevel: level, seenBadges: earned.map((b) => b.id) });
+    if (earned.length || level > 1) {
+      queueToast(`נפתחו ${earned.length} תגים ורמה ${level}`, { iconHTML: icon('trophy'), big: true });
+    }
+    return;
+  }
+  const fresh = earned.filter((b) => !meta.seenBadges.includes(b.id));
+  if (fresh.length) {
+    updateMeta({ seenBadges: [...meta.seenBadges, ...fresh.map((b) => b.id)] });
+    fresh.forEach((b) => queueToast(`תג חדש: ${b.name}`, { iconHTML: medallion(b, true, 40), big: true }));
+  }
+  if (level > meta.lastSeenLevel) {
+    updateMeta({ lastSeenLevel: level });
+    celebrateLevel(level);
+  }
 }
 
 tabbar.addEventListener('click', (e) => {
@@ -91,7 +128,7 @@ document.addEventListener('visibilitychange', () => {
   if (t !== ctx.lastToday) {
     if (ctx.date === ctx.lastToday) ctx.date = t;
     ctx.lastToday = t;
-    if (!document.querySelector('.sheet-backdrop, .timer-overlay')) render();
+    if (!document.querySelector('.sheet-backdrop, .timer-overlay, .celebrate')) render();
   }
 });
 

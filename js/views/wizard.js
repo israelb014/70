@@ -15,6 +15,7 @@ export const SETTINGS_FIELDS = {
   climbsTarget: { label: 'יעד עליות יומי', unit: 'עליות', def: 6, required: true, step: 1, min: 1 },
   floorsRegular: { label: 'קומות בעלייה רגילה', unit: 'קומות', def: 6, required: true, step: 1, min: 1 },
   floorsRoof: { label: 'קומות בעלייה לגג', unit: 'קומות', def: 10, required: true, step: 1, min: 1 },
+  sleepTarget: { label: 'יעד שינה', unit: 'שעות', def: 8, step: 0.5, min: 3, max: 14 },
 };
 
 export function fieldHTML(key, value) {
@@ -39,6 +40,7 @@ const STEPS = [
   { title: 'צעדים', text: 'יעד הצעדים היומי.', fields: ['stepsTarget'] },
   { title: 'רכיבה', text: 'מרחק היעד לרכיבה אחת.', fields: ['rideGoalKm'] },
   { title: 'מדרגות', text: 'כמה עליות ביום, וכמה קומות בכל סוג עלייה.', fields: ['climbsTarget', 'floorsRegular', 'floorsRoof'] },
+  { title: 'שינה', text: 'כמה שעות שינה בלילה? אפשר להשאיר 8 ולהמשיך.', fields: ['sleepTarget'] },
   { title: 'תרגילים', text: 'הוסיפו את התרגילים הקבועים. אפשר גם לדלג ולהוסיף בהמשך בהגדרות.', exercises: true },
 ];
 
@@ -117,7 +119,7 @@ export function render(root, onDone) {
         return invalid(root.querySelector('[name=targetWeight]'), 'משקל היעד צריך להיות שונה מהמשקל ההתחלתי');
       }
       if (last) {
-        updateSettings(wiz.draft);
+        updateSettings({ ...wiz.draft, sleepTarget: wiz.draft.sleepTarget || 8 });
         wiz.step = 0;
         wiz.draft = {};
         return onDone();
