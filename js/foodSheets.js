@@ -3,6 +3,7 @@
 import { getState, updateDay, upsertPreset, upsertCustomFood, rememberFood } from './storage.js';
 import { icon, esc, num, parseNum, toast, vibrate, openSheet, invalid } from './ui.js';
 import { fromCustom, lookupBarcode } from './foods.js';
+import { nowTime } from './dates.js';
 import { openScanner } from './scanner.js';
 
 const round1 = (v) => Math.round(v * 10) / 10;
@@ -104,7 +105,9 @@ export async function openAmountSheet(dayKey, food, { editableName = false, sour
 
   const grams = Math.round(res.grams * 10) / 10;
   const { kcal, protein } = calcFood(food, grams);
-  updateDay(dayKey, (d) => d.food.push({ name: res.name, grams, kcal, protein, source }));
+  updateDay(dayKey, (d) =>
+    d.food.push({ name: res.name, grams, kcal, protein, source, time: nowTime(), amount: res.amount, unit: units[unitIdx].l })
+  );
   rememberFood(food.key, res.amount, units[unitIdx].l);
   if (food.id && res.name !== food.name) upsertCustomFood({ id: food.id, name: res.name });
   if (res.preset) upsertPreset({ name: res.name, kcal, protein });
@@ -199,7 +202,9 @@ export async function scanFlow(dayKey) {
   const saved = upsertCustomFood(res.product);
   const food = fromCustom(saved);
   const { kcal, protein } = calcFood(food, res.amount);
-  updateDay(dayKey, (d) => d.food.push({ name: saved.name, grams: res.amount, kcal, protein, source: 'barcode' }));
+  updateDay(dayKey, (d) =>
+    d.food.push({ name: saved.name, grams: res.amount, kcal, protein, source: 'barcode', time: nowTime(), amount: res.amount, unit: 'גרם' })
+  );
   rememberFood(food.key, res.amount, 'גרם');
   vibrate(20);
   toast(`${saved.name} נשמר ונוסף`);

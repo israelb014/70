@@ -4,7 +4,10 @@ import { ring } from '../charts.js';
 import {
   icon, esc, num, parseNum, toast, vibrate, openSheet, confirmDialog, invalid, dateNav, handleDateNav,
 } from '../ui.js';
-import { foodTotals } from '../stats.js';
+import { foodTotals, sortedFood } from '../stats.js';
+import { nowTime } from '../dates.js';
+import { dailySummary, copyText } from '../export.js';
+import { unitAmount } from '../hebrew.js';
 import { loadFoodDb, searchFoods } from '../foods.js';
 import { openAmountSheet, scanFlow } from '../foodSheets.js';
 
@@ -31,11 +34,13 @@ export function render(root, ctx) {
         .join('')}</div>`
     : '<p class="muted">אין עדיין ארוחות קבועות. אפשר לשמור ארוחה מההזנה הידנית או מכאן.</p>';
 
-  const items = day.food
+  const items = sortedFood(day)
     .map(
-      (f, i) => `<li class="list-row swipe" data-swipe="${i}">
+      ({ f, i }) => `<li class="list-row swipe" data-swipe="${i}">
+        <button type="button" class="time-chip press ${f.time ? '' : 'empty'}" data-action="food-time" data-i="${i}" aria-label="עריכת שעה">
+          ${f.time ? `<bdi class="num">${esc(f.time)}</bdi>` : icon('timer')}</button>
         <div class="grow"><strong>${esc(f.name || 'ללא שם')}</strong>
-          <div class="muted small">${f.grams ? `${num(f.grams)} ג׳ · ` : ''}${num(f.kcal || 0)} קק״ל · <span class="protein-txt">${num(f.protein || 0)} ג׳ חלבון</span></div></div>
+          <div class="muted small">${amountText(f)}${num(f.kcal || 0)} קק״ל · <span class="protein-txt">${num(f.protein || 0)} ג׳ חלבון</span></div></div>
         <button type="button" class="icon-btn sm press danger-ic" data-action="food-del" data-i="${i}" aria-label="מחיקה">${icon('trash')}</button>
       </li>`
     )
@@ -83,8 +88,9 @@ export function render(root, ctx) {
 
     <section class="card">
       <div class="card-head">${icon('list', 'head-ic')}<h2>מה אכלתי</h2><span class="muted small">${num(day.food.length)} פריטים</span></div>
-      ${items ? `<ul class="list">${items}</ul><p class="hint">החלקה הצידה למחיקה</p>` : '<p class="muted">עדיין לא נוספו פריטים ביום הזה.</p>'}
-    </section>`;
+      ${items ? `<ul class="list">${items}</ul><p class="hint">הקשה על השעה לעריכה · החלקה הצידה למחיקה</p>` : '<p class="muted">עדיין לא נוספו פריטים ביום הזה.</p>'}
+    </section>
+    <button type="button" class="btn secondary block press" data-action="copy-daily">${icon('copy')}<span>העתק סיכום יומי</span></button>`;
 
   root.onclick = (e) => onClick(e, ctx);
   root.onchange = null;
@@ -92,6 +98,12 @@ export function render(root, ctx) {
     if (e.target.matches('[data-search]')) updateResults(root, e.target.value);
   };
   bindSwipe(root, ctx);
+}
+
+/** "2 יחידות (100 ג׳) · " / "150 ג׳ · " / "" for entries without an amount. */
+function amountText(f) {
+  if (f.amount && f.unit && f.unit !== 'גרם') return `${esc(unitAmount(f.amount, f.unit))} (${num(f.grams)} ג׳) · `;
+  return f.grams ? `${num(f.grams)} ג׳ · ` : '';
 }
 
 /* ---------- Search ---------- */
@@ -151,7 +163,7 @@ async function onClick(e, ctx) {
     case 'preset-add': {
       const p = getState().mealPresets.find((m) => m.id === b.dataset.id);
       if (!p) return;
-      updateDay(k, (d) => d.food.push({ name: p.name, grams: null, kcal: p.kcal || 0, protein: p.protein || 0, source: 'preset' }));
+      updateDay(k, (d) => d.food.push({ name: p.name, grams: null, kcal: p.kcal || 0, protein: p.protein || 0, source: 'preset', time: nowTime() }));
       vibrate(20);
       toast(`${p.name} נוסף`);
       return ctx.rerender();
@@ -165,7 +177,7 @@ async function onClick(e, ctx) {
       if (!name && kcal === null && protein === null) return invalid(q('name'), 'יש להזין שם או ערכים');
       if (q('save').checked && !name) return invalid(q('name'), 'כדי לשמור ארוחה קבועה יש לתת לה שם');
       const item = { name: name || 'ללא שם', kcal: Math.max(0, kcal || 0), protein: Math.max(0, protein || 0) };
-      updateDay(k, (d) => d.food.push({ ...item, grams: null, source: 'manual' }));
+      updateDay(k, (d) => d.food.push({ ...item, grams: null, source: 'manual', time: nowTime() }));
       if (q('save').checked) upsertPreset({ ...item });
       vibrate(20);
       toast('נוסף');
@@ -174,6 +186,37 @@ async function onClick(e, ctx) {
     case 'food-del':
       removeFood(ctx, Number(b.dataset.i));
       return;
+    case 'food-time': {
+      const i = Number(b.dataset.i);
+      const item = getDay(k).food[i];
+      if (!item) return;
+      const res = await openSheet({
+        title: 'שעת הארוחה',
+        body: `<p class="muted">${esc(item.name)}</p>
+          <label class="field"><span>שעה</span><input type="time" name="time" value="${item.time || nowTime()}"></label>`,
+        actions: [
+          { label: 'ביטול', value: null, kind: 'ghost' },
+          {
+            label: 'שמירה',
+            kind: 'primary',
+            onClick: (root) => {
+              const v = root.querySelector('[name=time]').value;
+              return /^\d{2}:\d{2}$/.test(v) ? v : invalid(root.querySelector('[name=time]'), 'שעה לא תקינה');
+            },
+          },
+        ],
+      });
+      if (res) {
+        updateDay(k, (d) => (d.food[i].time = res));
+        ctx.rerender();
+      }
+      return;
+    }
+    case 'copy-daily': {
+      const ok = await copyText(dailySummary(k));
+      toast(ok ? 'הסיכום היומי הועתק' : 'ההעתקה נכשלה');
+      return;
+    }
     case 'presets-manage':
       await managePresets();
       return ctx.rerender();

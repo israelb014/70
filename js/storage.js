@@ -2,9 +2,9 @@
 // Every read/write is wrapped in try/catch so a full or blocked storage never crashes the app.
 
 export const STORAGE_KEY = 'seventy.v1';
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 // Versions accepted when loading or importing (older ones are migrated).
-const SUPPORTED_VERSIONS = [1, 2, 3];
+const SUPPORTED_VERSIONS = [1, 2, 3, 4];
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -19,7 +19,7 @@ export function blankState() {
 }
 
 export function blankDay() {
-  return { rest: false, steps: null, climbs: [], rides: [], exercises: {}, food: [], sleep: null };
+  return { rest: false, steps: null, climbs: [], rides: [], exercises: {}, food: [], sleep: null, water: [] };
 }
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -29,6 +29,8 @@ const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
  * Migrations are additive:
  *   v1 → v2: customFoods / foodMemory added; old food entries ({name, kcal, protein}) stay valid.
  *   v2 → v3: settings.sleepTarget (default 8), days[].sleep, meta { lastSeenLevel, seenBadges }.
+ *   v3 → v4: settings.waterTarget (default 2500 ml), days[].water [{ ml, time }];
+ *            food entries may carry time ("HH:MM"), amount and unit (older entries stay valid).
  */
 export function normalize(d) {
   const s = blankState();
@@ -46,6 +48,7 @@ export function normalize(d) {
   s.foodMemory = isObj(d.foodMemory) ? { ...d.foodMemory } : {};
   s.settings = isObj(d.settings) ? { ...d.settings } : null;
   if (s.settings && !(Number(s.settings.sleepTarget) > 0)) s.settings.sleepTarget = 8;
+  if (s.settings && !(Number(s.settings.waterTarget) > 0)) s.settings.waterTarget = 2500;
   if (isObj(d.meta)) {
     s.meta = {
       lastSeenLevel: Number.isFinite(d.meta.lastSeenLevel) ? d.meta.lastSeenLevel : null,
@@ -70,6 +73,10 @@ export function normalize(d) {
         food: Array.isArray(day.food) ? day.food.filter(isObj) : b.food,
         sleep: isObj(day.sleep) && TIME_RE.test(day.sleep.bed) && TIME_RE.test(day.sleep.wake)
           ? { bed: day.sleep.bed, wake: day.sleep.wake } : null,
+        water: Array.isArray(day.water)
+          ? day.water.filter((w) => isObj(w) && Number(w.ml) > 0)
+            .map((w) => ({ ml: Number(w.ml), time: TIME_RE.test(w.time) ? w.time : null }))
+          : [],
       };
     }
   }

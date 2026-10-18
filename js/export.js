@@ -1,11 +1,111 @@
-// Weekly text summary (clipboard) and JSON backup export / import.
+// Daily / weekly text summaries (clipboard) and JSON backup export / import.
 import { getState, getDay, validateBackup, replaceState } from './storage.js';
-import { lastNDays, todayKey, shortDate, weekdayName } from './dates.js';
-import { computeRecords, exercisesForDay, foodTotals, floorsOf } from './stats.js';
+import { lastNDays, todayKey, shortDate, weekdayName, fullDate } from './dates.js';
+import { computeRecords, exercisesForDay, foodTotals, floorsOf, dayCompletion, sortedFood, waterMl } from './stats.js';
 import { fmt } from './ui.js';
-import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES } from './progress.js';
+import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES, dayXP } from './progress.js';
+import { int, dec1, dec2, trim, iso, plural, unitAmount } from './hebrew.js';
 
-const iso = (s) => `\u2066${s}\u2069`; // keep times/ranges LTR inside Hebrew lines
+// Right-to-left mark: makes a line that starts with Latin text ("XP …") lay out right-to-left.
+const RLM = '\u200F';
+
+/* ---------- Shared line builders ---------- */
+
+/** "3 סטים (20, 20, 18 חזרות) · 6 ק״ג" / "סט אחד (12 חזרות)" / "60 שניות"; '' when nothing was done. */
+function exerciseLine(ex, entry) {
+  if (!entry) return '';
+  const kg = (w) => (w ? ` · ${trim(w, 1)} ק״ג` : '');
+  if (ex.type === 'setsReps') {
+    const done = (entry.sets || []).filter((s) => s.done);
+    if (!done.length) return '';
+    const reps = done.length === 1
+      ? plural(done[0].reps, 'חזרה אחת', 'חזרות')
+      : `${done.map((s) => int(s.reps)).join(', ')} חזרות`;
+    return `${plural(done.length, 'סט אחד', 'סטים')} (${reps})${kg(done.find((s) => s.weight)?.weight)}`;
+  }
+  if (ex.type === 'timed') return entry.seconds ? `${plural(entry.seconds, 'שנייה אחת', 'שניות')}${kg(entry.weight)}` : '';
+  return entry.reps ? `סט אחד (${plural(entry.reps, 'חזרה אחת', 'חזרות')})${kg(entry.weight)}` : '';
+}
+
+const climbsText = (day) =>
+  `${plural(day.climbs.length, 'עלייה אחת', 'עליות')} · ${plural(floorsOf(day), 'קומה אחת', 'קומות')}`;
+
+const sleepText = (sl) => `שינה: ${iso(fmtDuration(sleepMinutes(sl)))} שעות (${iso(`${sl.bed}–${sl.wake}`)})`;
+
+/** "9 כוסות" / "כוס אחת" / "1.5 כוסות" — 250 ml per glass, one decimal. */
+const cupsText = (ml) => plural(Math.round((ml / 250) * 10) / 10, 'כוס אחת', 'כוסות', (n) => trim(n, 1));
+
+/* ---------- Daily summary ---------- */
+
+/** Plain-text Hebrew summary of one day. Sections without data are omitted (food always appears). */
+export function dailySummary(k) {
+  const st = getState().settings;
+  const day = getDay(k);
+  const sections = [[`סיכום יומי · יום ${weekdayName(k)} ${fullDate(k)}`]];
+
+  // אימון
+  const exLines = [];
+  for (const ex of exercisesForDay(k)) {
+    const t = exerciseLine(ex, day.exercises[ex.id]);
+    if (t) exLines.push(`• ${ex.name}: ${t}`);
+  }
+  const hasExercise = exLines.length > 0;
+  if (day.rest) exLines.push('• יום מנוחה');
+  if (exLines.length) {
+    const sec = ['אימון:', ...exLines];
+    const c = dayCompletion(k);
+    if (hasExercise && c.total) {
+      sec.push(`השלמה: ${Math.round(c.fraction * 100)}% (${c.done} מתוך ${c.total === 1 ? 'תרגיל אחד' : `${c.total} תרגילים`})`);
+    }
+    sections.push(sec);
+  }
+
+  // פעילות
+  const act = [];
+  if (day.steps) act.push(`• צעדים: ${st.stepsTarget ? iso(`${int(day.steps)} / ${int(st.stepsTarget)}`) : int(day.steps)}`);
+  if (day.climbs.length) act.push(`• מדרגות: ${climbsText(day)}`);
+  if (day.rides.length) {
+    const km = day.rides.reduce((a, r) => a + (Number(r.km) || 0), 0);
+    const min = day.rides.reduce((a, r) => a + (Number(r.minutes) || 0), 0);
+    act.push(`• אופניים: ${plural(day.rides.length, 'רכיבה אחת', 'רכיבות')} · ${dec1(km)} ק״מ${min ? ` · ${int(min)} דק׳` : ''}`);
+    if (day.rides.length > 1) {
+      for (const r of day.rides) act.push(`• רכיבה: ${dec1(r.km)} ק״מ${r.minutes ? ` · ${int(r.minutes)} דק׳` : ''}`);
+    }
+  }
+  if (act.length) sections.push(['פעילות:', ...act]);
+
+  if (day.sleep) sections.push([sleepText(day.sleep)]);
+
+  const ml = waterMl(day);
+  if (ml) sections.push([`מים: ${dec2(ml / 1000)} ל׳ / ${trim((st.waterTarget || 2500) / 1000)} ל׳ (${cupsText(ml)})`]);
+
+  // אוכל ושתייה (always present)
+  const food = ['אוכל ושתייה:'];
+  const items = sortedFood(day);
+  if (!items.length) food.push('לא נרשם אוכל');
+  for (const { f } of items) {
+    const amount = f.amount && f.unit && f.unit !== 'גרם'
+      ? `${unitAmount(f.amount, f.unit)} (${trim(f.grams, 1)} ג׳) · `
+      : f.grams ? `${trim(f.grams, 1)} ג׳ · ` : '';
+    food.push(`• ${f.time || '—'} · ${f.name || 'ללא שם'} · ${amount}${int(f.kcal)} קק״ל · ${dec1(f.protein)} ג׳ חלבון`);
+  }
+  if (items.length) {
+    const t = foodTotals(k);
+    food.push(`סה״כ: ${int(t.kcal)} קק״ל · ${dec1(t.protein)} ג׳ חלבון${st.proteinTarget ? ` / ${int(st.proteinTarget)} ג׳` : ''}`);
+  }
+  sections.push(food);
+
+  const weighins = getState().weights.filter((w) => w.date === k);
+  if (weighins.length) sections.push([`שקילה: ${trim(weighins.at(-1).kg, 1)} ק״ג`]);
+
+  const xpSec = [`${RLM}XP היום: ${int(dayXP(k) + 5 * weighins.length)} · רמה ${levelInfo().level}`];
+  const walk = walkHistory();
+  const badges = BADGES.filter((b) => walk.earned[b.id] === k);
+  if (badges.length) xpSec.push(`תגים חדשים: ${badges.map((b) => b.name).join(', ')}`);
+  sections.push(xpSec);
+
+  return sections.map((sec) => sec.join('\n')).join('\n\n');
+}
 
 /* ---------- Weekly summary ---------- */
 
@@ -20,18 +120,17 @@ export function weeklySummary() {
     lines.push(`יום ${weekdayName(k)} ${shortDate(k)}${day.rest ? ' · יום מנוחה' : ''}`);
     const body = [];
     if (day.steps) body.push(`צעדים: ${fmt(day.steps)}`);
-    if (day.climbs.length) body.push(`מדרגות: ${day.climbs.length} עליות · ${fmt(floorsOf(day))} קומות`);
+    if (day.climbs.length) body.push(`מדרגות: ${climbsText(day)}`);
     for (const r of day.rides) {
       body.push(`רכיבה: ${fmt(r.km)} ק״מ${r.minutes ? ` · ${fmt(r.minutes)} דק׳` : ''}${r.note ? ` (${r.note})` : ''}`);
     }
     for (const ex of exercisesForDay(k)) {
-      const entry = day.exercises[ex.id];
-      const t = exerciseLine(ex, entry);
+      const t = exerciseLine(ex, day.exercises[ex.id]);
       if (t) body.push(`${ex.name}: ${t}`);
     }
-    if (day.sleep) {
-      body.push(`שינה: ${iso(fmtDuration(sleepMinutes(day.sleep)))} שעות (${iso(`${day.sleep.bed}–${day.sleep.wake}`)})`);
-    }
+    if (day.sleep) body.push(sleepText(day.sleep));
+    const ml = waterMl(day);
+    if (ml) body.push(`מים: ${dec2(ml / 1000)} ל׳ (${cupsText(ml)})`);
     const ft = foodTotals(k);
     if (day.food.length) body.push(`אוכל: ${fmt(ft.kcal)} קק״ל · ${fmt(ft.protein)} ג׳ חלבון`);
     if (!body.length) body.push('אין נתונים');
@@ -57,25 +156,12 @@ export function weeklySummary() {
   const walk = walkHistory();
   const newBadges = BADGES.filter((b) => walk.earned[b.id] >= keys[0] && walk.earned[b.id] <= keys[6]);
   lines.push(`רמה נוכחית: ${levelInfo().level}`);
-  lines.push(`XP השבוע: ${fmt(weekXP())}`);
+  lines.push(`${RLM}XP השבוע: ${fmt(weekXP())}`);
   lines.push('תגים חדשים השבוע:');
   if (newBadges.length) for (const b of newBadges) lines.push(`• ${b.name} (${shortDate(walk.earned[b.id])})`);
   else lines.push('• אין תגים חדשים השבוע');
 
   return lines.join('\n');
-}
-
-function exerciseLine(ex, entry) {
-  if (!entry) return '';
-  if (ex.type === 'setsReps') {
-    const done = (entry.sets || []).filter((s) => s.done);
-    if (!done.length) return '';
-    const reps = done.map((s) => s.reps).join(', ');
-    const w = done.find((s) => s.weight)?.weight;
-    return `${done.length} סטים (${reps} חזרות)${w ? ` · ${fmt(w)} ק״ג` : ''}`;
-  }
-  if (ex.type === 'timed') return entry.seconds ? `${entry.seconds} שניות${entry.weight ? ` · ${fmt(entry.weight)} ק״ג` : ''}` : '';
-  return entry.reps ? `${entry.reps} חזרות${entry.weight ? ` · ${fmt(entry.weight)} ק״ג` : ''}` : '';
 }
 
 /** Copy text using the async Clipboard API with a textarea fallback. */

@@ -38,6 +38,9 @@ const P = {
   search: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M20 20l-4.8-4.8"/>',
   keyboard: '<rect x="2.5" y="6" width="19" height="12" rx="3"/><path d="M6.5 10h.01M10 10h.01M13.5 10h.01M17 10h.01M8 14h8"/>',
   box: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>',
+  drop: '<path d="M12 3.5c3 3.6 6 7.2 6 10.5a6 6 0 0 1-12 0c0-3.3 3-6.9 6-10.5z"/><path d="M9 14.5a3 3 0 0 0 3 3"/>',
+  glass: '<path d="M6 4h12l-1.6 15a1.5 1.5 0 0 1-1.5 1.3H9.1a1.5 1.5 0 0 1-1.5-1.3z"/><path d="M6.7 10.5h10.6"/>',
+  bottle: '<path d="M10 2.5h4M10.5 2.5v3L8.5 8.5v11a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2v-11l-2-3v-3"/><path d="M8.5 12.5h7"/>',
   bed: '<path d="M3 18V6M3 14h18v4M21 14v-2.5a3 3 0 0 0-3-3h-7v5.5"/><circle cx="7" cy="11" r="1.8"/>',
   alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.5h.01"/>',
 };

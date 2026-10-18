@@ -141,3 +141,17 @@ export function foodTotals(k) {
 export function floorsOf(day) {
   return (day.climbs || []).reduce((s, c) => s + (Number(c.floors) || 0), 0);
 }
+
+/**
+ * Food entries in display order with their original index: entries without a time first
+ * (in insertion order), then chronologically by "HH:MM".
+ */
+export function sortedFood(day) {
+  return (day.food || [])
+    .map((f, i) => ({ f, i }))
+    .sort((a, b) => (a.f.time ? 1 : 0) - (b.f.time ? 1 : 0) || (a.f.time || '').localeCompare(b.f.time || '') || a.i - b.i);
+}
+
+export function waterMl(day) {
+  return (day?.water || []).reduce((s, w) => s + (Number(w.ml) || 0), 0);
+}

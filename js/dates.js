@@ -6,6 +6,18 @@ export function keyOf(d) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
+/** Current local time as "HH:MM". */
+export function nowTime() {
+  const d = new Date();
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/** "18.10.2026" */
+export function fullDate(k) {
+  const d = parseKey(k);
+  return `${d.getDate()}.${d.getMonth() + 1}.${d.getFullYear()}`;
+}
+
 export function todayKey() {
   return keyOf(new Date());
 }

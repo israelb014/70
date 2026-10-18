@@ -12,6 +12,10 @@ import {
 import { runTimer } from '../timer.js';
 import { targetText } from '../exerciseEditor.js';
 import { levelInfo, sleepMinutes, fmtDuration, lastSleep } from '../progress.js';
+import { waterMl } from '../stats.js';
+import { nowTime } from '../dates.js';
+import { dailySummary, copyText } from '../export.js';
+import { plural } from '../hebrew.js';
 
 // Unicode isolate for numbers inside plain-text (non-HTML) RTL strings.
 const iso = (s) => `⁦${s}⁩`;
@@ -28,12 +32,14 @@ export function render(root, ctx) {
     ${heroCard(k, day)}
     ${stepsCard(day, st, badge)}
     ${sleepCard(day, st)}
+    ${waterCard(day, st)}
     ${stairsCard(day, st, badge)}
     ${ridesCard(day, st, badge)}
     ${exerciseCards(k, day, ctx, rec)}
     <button type="button" class="btn rest-btn block press ${day.rest ? 'active' : ''}" data-action="rest" aria-pressed="${day.rest}">
       ${icon('moon')}<span>${day.rest ? 'יום מנוחה · לביטול' : 'יום מנוחה'}</span>
-    </button>`;
+    </button>
+    <button type="button" class="btn secondary block press" data-action="copy-daily">${icon('copy')}<span>העתק סיכום יומי</span></button>`;
   ctx.justCompleted.clear();
 
   root.onclick = (e) => onClick(e, ctx);
@@ -79,6 +85,50 @@ function sleepCard(day, st) {
     </div>
     <button type="button" class="btn secondary block press" data-action="sleep-save">${icon('check')}<span>${s ? 'עדכון שינה' : 'שמירת שינה'}</span></button>
   </section>`;
+}
+
+// Quick-add amounts (ml)
+const GLASS = 250, BOTTLE = 500;
+const liters = (ml) => (ml / 1000).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function waterCard(day, st) {
+  const target = st.waterTarget || 2500;
+  const ml = waterMl(day);
+  const last = day.water.at(-1);
+  return `<section class="card water-card">
+    <div class="card-head">${icon('drop', 'head-ic')}<h2>מים</h2>
+      <button type="button" class="icon-btn sm press" data-action="water-undo" aria-label="ביטול הוספה אחרונה" ${last ? '' : 'disabled'}>${icon('undo')}</button></div>
+    <div class="row">
+      ${ring({
+        id: 'water', size: 132, stroke: 13, frac: ml / target,
+        color: ml >= target ? 'var(--success)' : 'var(--protein)',
+        inner: `<div class="ring-big xs">${num(liters(ml))}</div><div class="muted small">ל׳</div>`,
+      })}
+      <div class="grow">
+        <div class="stat-num">${num(ml)}<small> מ״ל</small></div>
+        <div class="muted">מתוך ${num(target / 1000, 2)} ל׳ · ${esc(plural(Math.round((ml / GLASS) * 10) / 10, 'כוס אחת', 'כוסות'))}</div>
+        ${last ? `<div class="muted small">אחרון: ${num(last.ml)} מ״ל${last.time ? ` בשעה ${num(last.time)}` : ''}</div>` : ''}
+      </div>
+    </div>
+    <div class="water-btns">
+      <button type="button" class="water-add press" data-action="water-add" data-ml="${GLASS}">${icon('glass')}<strong>+ כוס</strong><span>${num(GLASS)} מ״ל</span></button>
+      <button type="button" class="water-add press" data-action="water-add" data-ml="${BOTTLE}">${icon('bottle')}<strong>+ בקבוק</strong><span>${num(BOTTLE)} מ״ל</span></button>
+      <button type="button" class="water-add press" data-action="water-other">${icon('plus')}<strong>אחר</strong><span>מ״ל</span></button>
+    </div>
+  </section>`;
+}
+
+function addWater(ctx, ml) {
+  const st = getState().settings;
+  const before = waterMl(getDay(ctx.date));
+  updateDay(ctx.date, (d) => d.water.push({ ml, time: nowTime() }));
+  const after = waterMl(getDay(ctx.date));
+  const target = st.waterTarget || 2500;
+  if (before < target && after >= target) {
+    vibrate([40, 50, 40]);
+    toast('יעד המים הושג');
+  } else vibrate(20);
+  ctx.rerender();
 }
 
 function readSleep(root) {
@@ -387,6 +437,37 @@ async function onClick(e, ctx) {
       vibrate(20);
       toast(`נשמרו ${fmtDuration(sleepMinutes(sl))} שעות שינה`);
       return rerender();
+    }
+    case 'water-add':
+      return addWater(ctx, Number(b.dataset.ml));
+    case 'water-other': {
+      const ml = await openSheet({
+        title: 'כמה מים?',
+        body: `<label class="field"><span>כמות במ״ל</span>
+          <input type="number" inputmode="numeric" name="ml" min="1" max="5000" placeholder="330"></label>`,
+        onOpen: (r) => setTimeout(() => r.querySelector('[name=ml]').focus(), 300),
+        actions: [
+          { label: 'ביטול', value: null, kind: 'ghost' },
+          {
+            label: 'הוספה',
+            kind: 'primary',
+            onClick: (r) => {
+              const v = parseNum(r.querySelector('[name=ml]').value);
+              return v > 0 && v <= 5000 ? Math.round(v) : invalid(r.querySelector('[name=ml]'), 'כמות לא תקינה (1–5000 מ״ל)');
+            },
+          },
+        ],
+      });
+      if (ml) addWater(ctx, ml);
+      return;
+    }
+    case 'water-undo':
+      updateDay(k, (d) => d.water.pop());
+      return rerender();
+    case 'copy-daily': {
+      const ok = await copyText(dailySummary(k));
+      toast(ok ? 'הסיכום היומי הועתק' : 'ההעתקה נכשלה');
+      return;
     }
     case 'sleep-del':
       updateDay(k, (d) => (d.sleep = null));

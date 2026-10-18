@@ -3,7 +3,7 @@ import { getState, getDay, addWeight, deleteWeight } from '../storage.js';
 import { ring, barChart, weightChart } from '../charts.js';
 import { icon, esc, num, parseNum, toast, openSheet, confirmDialog, invalid } from '../ui.js';
 import { lastNDays, todayKey, shortDate } from '../dates.js';
-import { computeRecords, foodTotals } from '../stats.js';
+import { computeRecords, foodTotals, waterMl } from '../stats.js';
 import { weeklySummary, copyText } from '../export.js';
 import { heatmapCard, bindHeatmap } from '../heatmap.js';
 import { levelInfo, weekXP, badgeStates, sleepMinutes, fmtDuration, averageBedtime } from '../progress.js';
@@ -30,6 +30,7 @@ export function render(root, ctx) {
       <p class="legend"><span class="lg-line"></span>יעד ${num(st.proteinTarget || 0)} ג׳</p>
     </section>
     ${sleepTrendCard(st, keys)}
+    ${waterTrendCard(st, keys)}
     ${recordsCard()}
     <button type="button" class="btn primary block press" data-action="copy-summary">${icon('copy')}<span>העתק סיכום שבועי</span></button>`;
 
@@ -55,6 +56,23 @@ function achievementsCard() {
     </div>
     ${icon('chevL')}
   </button>`;
+}
+
+function waterTrendCard(st, keys) {
+  const target = (st.waterTarget || 2500) / 1000;
+  const liters = keys.map((k) => waterMl(getDay(k)) / 1000);
+  const logged = liters.filter((l) => l > 0);
+  const avg = logged.length ? logged.reduce((a, b) => a + b, 0) / logged.length : 0;
+  const f2 = (v) => v.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `<section class="card">
+    <div class="card-head">${icon('drop', 'head-ic')}<h2>מים · 7 ימים</h2></div>
+    ${barChart({ keys, values: liters, target, color: 'var(--protein)', format: (v) => f2(v) })}
+    <p class="legend"><span class="lg-line"></span>יעד ${num(target, 2)} ל׳</p>
+    <div class="hm-stats">
+      <div><span class="stat-num">${logged.length ? num(f2(avg)) : '–'}</span><span class="muted small">ממוצע ליטרים ליום</span></div>
+      <div><span class="stat-num">${num(logged.length)}<small>/7</small></span><span class="muted small">ימים עם תיעוד</span></div>
+    </div>
+  </section>`;
 }
 
 function sleepTrendCard(st, keys) {

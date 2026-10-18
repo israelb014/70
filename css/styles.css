@@ -613,3 +613,25 @@ input[type='time']::-webkit-calendar-picker-indicator { opacity: 0.6; }
 @keyframes celebfill { from { stroke-dashoffset: var(--c); } to { stroke-dashoffset: 0; } }
 .celebrate-num { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 104px; font-weight: 900; line-height: 1; animation: pop 0.7s 0.9s var(--ease) both; }
 .celebrate h1 { font-size: 32px; }
+
+/* ---------- Water ---------- */
+.ring-big.xs { font-size: 30px; }
+.water-btns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.water-add {
+  min-height: 92px; padding: 10px 6px; border-radius: var(--r); border: 1px solid rgba(45, 212, 191, 0.35);
+  background: linear-gradient(180deg, rgba(45, 212, 191, 0.14), rgba(45, 212, 191, 0.04));
+  color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  font: inherit; cursor: pointer;
+}
+.water-add .ic { width: 26px; height: 26px; color: var(--protein); }
+.water-add strong { font-size: 16px; font-weight: 900; }
+.water-add span { font-size: 12px; color: var(--muted); }
+
+/* ---------- Food entry time ---------- */
+.time-chip {
+  flex: none; min-width: 64px; min-height: 48px; padding: 0 8px; border-radius: var(--r);
+  border: 1px solid var(--border-strong); background: var(--bg); color: var(--text);
+  font: inherit; font-size: 15px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.time-chip.empty { color: var(--muted); border-style: dashed; }
+.time-chip .ic { width: 18px; height: 18px; }
