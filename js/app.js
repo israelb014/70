@@ -213,8 +213,35 @@ if ('launchQueue' in window) {
   });
 }
 
+/* ---------- Updates ----------
+ * updateViaCache 'none': sw.js and version.js are always checked against the server. An update check
+ * runs on every start and whenever the app returns to the foreground (Android resumes a backgrounded
+ * PWA without reloading it). The new worker activates at once (skipWaiting + clients.claim); when it
+ * takes control the page reloads once to run the new code.
+ */
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch((err) => console.warn('SW registration failed', err));
+  const hadController = !!navigator.serviceWorker.controller; // first install: nothing old to replace
+  let reloading = false;
+  const RELOAD_KEY = 'seventy.swReload';
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloading) return;
+    // Loop guard: at most one automatic reload per 10 s (survives the reload via sessionStorage).
+    let last = 0;
+    try { last = Number(sessionStorage.getItem(RELOAD_KEY)) || 0; } catch { /* storage blocked */ }
+    if (Date.now() - last < 10000) return;
+    reloading = true;
+    try { sessionStorage.setItem(RELOAD_KEY, String(Date.now())); } catch { /* storage blocked */ }
+    // Don't throw away an open sheet, timer or scanner: reload as soon as it is closed.
+    const busy = () => document.querySelector('.sheet-backdrop, .timer-overlay, .scan-overlay, .celebrate');
+    const go = () => (busy() ? setTimeout(go, 1000) : location.reload());
+    go();
   });
+  navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
+    .then((reg) => {
+      reg.update().catch(() => {});
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') reg.update().catch(() => {});
+      });
+    })
+    .catch((err) => console.warn('SW registration failed', err));
 }

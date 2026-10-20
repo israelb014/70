@@ -1,6 +1,11 @@
-// Service worker: cache-first for app files and the Heebo font. Versioned cache; old caches removed.
-const CACHE_VERSION = '1.6.2';
-const CACHE = `seventy-${CACHE_VERSION}`;
+// Service worker: network-first for the app shell (fresh deploys load on the first online open, the
+// cache is the offline fallback), stale-while-revalidate for the food database, cache-first for the
+// Heebo font. Versioned cache; old caches removed. skipWaiting + clients.claim: a new version takes
+// over immediately and the page reloads once (see app.js).
+importScripts('./js/version.js'); // self.APP_VERSION — the same constant Settings shows
+const CACHE = `seventy-${self.APP_VERSION}`;
+// Give up on a slow network after this long and answer from the cache (the network copy still refreshes it).
+const NETWORK_TIMEOUT_MS = 4000;
 
 const APP_FILES = [
   './',
@@ -9,6 +14,7 @@ const APP_FILES = [
   './css/styles.css',
   './js/app.js',
   './js/config.js',
+  './js/version.js',
   './js/dates.js',
   './js/storage.js',
   './js/stats.js',
@@ -56,7 +62,9 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE);
-      await cache.addAll(APP_FILES);
+      // cache: 'reload' bypasses the browser HTTP cache (GitHub Pages sends max-age=600), so a new
+      // version never precaches the previous version's files.
+      await cache.addAll(APP_FILES.map((u) => new Request(u, { cache: 'reload' })));
       // The font is best-effort: the app must install even if Google Fonts is unreachable.
       try {
         await cacheFont(cache);
@@ -107,30 +115,42 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  event.respondWith(
-    (async () => {
-      const cache = await caches.open(CACHE);
-      // Navigations always resolve to the cached app shell.
-      if (req.mode === 'navigate') {
-        const shell = (await cache.match('./index.html')) || (await cache.match('./'));
-        if (shell) return shell;
-      }
-      const hit = await cache.match(req, { ignoreSearch: sameOrigin });
-      if (hit) return hit;
-      try {
-        const res = await fetch(req);
-        if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
-        return res;
-      } catch (err) {
-        if (req.mode === 'navigate') {
-          const shell = await cache.match('./index.html');
-          if (shell) return shell;
-        }
-        throw err;
-      }
-    })()
-  );
+  event.respondWith(sameOrigin ? networkFirst(event, req) : cacheFirst(req));
 });
+
+/**
+ * App shell: network first (revalidated against the server, not the HTTP cache), cache fallback when
+ * offline or slow. Navigations fall back to the cached index.html (any ?action= query).
+ */
+async function networkFirst(event, req) {
+  const cache = await caches.open(CACHE);
+  const nav = req.mode === 'navigate';
+  const network = fetch(req, { cache: 'no-cache' })
+    .then(async (res) => {
+      if (res && res.ok) await cache.put(nav ? './index.html' : req, res.clone());
+      return res;
+    })
+    .catch(() => null);
+  const timeout = new Promise((r) => setTimeout(() => r(null), NETWORK_TIMEOUT_MS));
+  const res = await Promise.race([network, timeout]);
+  if (res && (res.ok || !nav)) return res;
+  event.waitUntil(network); // a late network answer still refreshes the cache
+  const hit = nav
+    ? (await cache.match('./index.html')) || (await cache.match('./'))
+    : await cache.match(req, { ignoreSearch: true });
+  if (hit) return hit;
+  return (await network) || Response.error();
+}
+
+/** Fonts (cross-origin, immutable): cache first. */
+async function cacheFirst(req) {
+  const cache = await caches.open(CACHE);
+  const hit = await cache.match(req);
+  if (hit) return hit;
+  const res = await fetch(req);
+  if (res && (res.ok || res.type === 'opaque')) cache.put(req, res.clone());
+  return res;
+}
 
 /** Serve the cached copy immediately (if any) and refresh it from the network in the background. */
 async function staleWhileRevalidate(event, req) {
