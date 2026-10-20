@@ -2,6 +2,18 @@
 import { shortDate, weekdayShort, weekStart, addDays, parseKey } from './dates.js';
 
 const clamp01 = (v) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
+
+/**
+ * Dash offset for a round-capped arc whose VISIBLE length (dash + both caps) equals frac × circumference.
+ * Round caps add stroke/2 at each end, so the dash itself is shortened by one stroke width.
+ * Full rings are drawn exactly full; 0 hides the arc.
+ */
+export function arcOffset(c, frac, stroke) {
+  const f = clamp01(frac);
+  if (f >= 1) return 0;
+  const dash = Math.max(0, f * c - stroke);
+  return c - dash;
+}
 const fmt = (n) => Number(n).toLocaleString('he-IL', { maximumFractionDigits: 1 });
 
 // Last rendered fraction per ring id, so re-renders animate from the previous value
@@ -16,8 +28,8 @@ export function ring({ id, size = 120, stroke = 12, frac, color = 'var(--accent)
   const f = clamp01(frac);
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
-  const to = c * (1 - f);
-  const from = id && lastFrac.has(id) ? c * (1 - lastFrac.get(id)) : c;
+  const to = arcOffset(c, f, stroke);
+  const from = id && lastFrac.has(id) ? arcOffset(c, lastFrac.get(id), stroke) : c;
   if (id) lastFrac.set(id, f);
   const h = size / 2;
   return `<div class="ring ${cls}" style="width:${size}px;height:${size}px">
@@ -42,13 +54,14 @@ export function concentricRings({ rings, size = 196, stroke = 14, gap = 5, inner
     const r = h - stroke / 2 - i * (stroke + gap);
     const c = 2 * Math.PI * r;
     const f = clamp01(rg.frac);
-    const to = c * (1 - f);
-    const from = rg.id && lastFrac.has(rg.id) ? c * (1 - lastFrac.get(rg.id)) : c;
+    const to = arcOffset(c, f, stroke);
+    const from = rg.id && lastFrac.has(rg.id) ? arcOffset(c, lastFrac.get(rg.id), stroke) : c;
     if (rg.id) lastFrac.set(rg.id, f);
-    circles += `<circle cx="${h}" cy="${h}" r="${r}" fill="none" stroke="${rg.color}" stroke-opacity="0.16" stroke-width="${stroke}"/>
+    // Neutral tracks keep adjacent arcs (accent / steps) visually separate.
+    circles += `<circle cx="${h}" cy="${h}" r="${r}" fill="none" stroke="var(--track)" stroke-width="${stroke}"/>
       <circle class="ring-fill" cx="${h}" cy="${h}" r="${r}" fill="none" stroke="${rg.color}" stroke-width="${stroke}"
         stroke-linecap="round" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${to.toFixed(2)}"
-        style="--from:${from.toFixed(2)};--to:${to.toFixed(2)};animation-delay:${i * 90}ms${f <= 0 ? ';opacity:0' : ''}"
+        data-frac="${f}" style="--from:${from.toFixed(2)};--to:${to.toFixed(2)};animation-delay:${i * 90}ms${f <= 0 ? ';opacity:0' : ''}"
         transform="rotate(-90 ${h} ${h})"/>`;
   });
   return `<div class="ring rings3" style="width:${size}px;height:${size}px">

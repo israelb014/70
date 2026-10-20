@@ -46,6 +46,14 @@ export function dayCompletion(k) {
   return { fraction: sum / list.length, done, total: list.length };
 }
 
+/**
+ * The one completion percentage (partial credit, rounded) shown everywhere:
+ * hero ring + number, daily summary.
+ */
+export function completionPct(k) {
+  return Math.round(dayCompletion(k).fraction * 100);
+}
+
 /** A day counts for the streak if: rest day, a completed exercise, a ride, or steps target met. */
 export function isDayActive(k) {
   const day = getState().days[k];

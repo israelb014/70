@@ -61,12 +61,11 @@ export function render(root, ctx) {
       ${ring({
         id: 'protein', size: 150, stroke: 14, frac: target ? t.protein / target : 0,
         color: target && t.protein >= target ? 'var(--success)' : 'var(--protein)',
-        inner: `<div class="ring-big sm">${num(t.protein)}</div><div class="muted small">מתוך ${num(target)} ג׳</div>`,
+        inner: `<div class="caption protein-txt">חלבון</div><div class="ring-big sm">${num(t.protein)}</div><div class="muted small">מתוך ${num(target)} ג׳</div>`,
       })}
       <div class="totals-side">
-        <div class="eyebrow protein-txt">חלבון</div>
         <div class="kcal">${num(t.kcal)}</div>
-        <div class="muted">קלוריות</div>
+        <div class="muted">קלוריות היום</div>
       </div>
     </section>
 

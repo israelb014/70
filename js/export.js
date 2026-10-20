@@ -1,7 +1,7 @@
 // Daily / weekly text summaries (clipboard) and JSON backup export / import.
 import { getState, getDay, validateBackup, replaceState } from './storage.js';
 import { lastNDays, todayKey, shortDate, weekdayName, fullDate } from './dates.js';
-import { computeRecords, exercisesForDay, foodTotals, floorsOf, dayCompletion, sortedFood, waterMl } from './stats.js';
+import { computeRecords, exercisesForDay, foodTotals, floorsOf, dayCompletion, completionPct, sortedFood, waterMl } from './stats.js';
 import { fmt } from './ui.js';
 import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES, dayXP } from './progress.js';
 import { int, dec1, dec2, trim, iso, plural, unitAmount } from './hebrew.js';
@@ -56,7 +56,7 @@ export function dailySummary(k) {
     const sec = ['אימון:', ...exLines];
     const c = dayCompletion(k);
     if (hasExercise && c.total) {
-      sec.push(`השלמה: ${Math.round(c.fraction * 100)}% (${c.done} מתוך ${c.total === 1 ? 'תרגיל אחד' : `${c.total} תרגילים`})`);
+      sec.push(`השלמה: ${completionPct(k)}% (${c.done} מתוך ${c.total === 1 ? 'תרגיל אחד' : `${c.total} תרגילים`})`);
     }
     sections.push(sec);
   }

@@ -17,14 +17,17 @@ import { nowTime } from '../dates.js';
 import { dailySummary, copyText } from '../export.js';
 import { plural, int } from '../hebrew.js';
 import { dayInsights } from '../insights.js';
-import { foodTotals } from '../stats.js';
+import { foodTotals, completionPct } from '../stats.js';
 import { todayKey } from '../dates.js';
 
 // Unicode isolate for numbers inside plain-text (non-HTML) RTL strings.
 const iso = (s) => `⁦${s}⁩`;
 
+let ctxDate = null;
+
 export function render(root, ctx) {
   const k = ctx.date;
+  ctxDate = k;
   const st = getState().settings;
   const day = getDay(k);
   const rec = recordIdsOn(k, computeRecords().events);
@@ -195,7 +198,7 @@ function previewSleep(root) {
 
 function heroCard(k, day, st) {
   const c = dayCompletion(k);
-  const pct = Math.round(c.fraction * 100);
+  const pct = completionPct(k); // the same value drives the ring and the number
   const streak = currentStreak();
   const steps = day.steps || 0;
   const protein = Math.round(foodTotals(k).protein);
@@ -204,7 +207,7 @@ function heroCard(k, day, st) {
     <div class="hero-main">
       ${concentricRings({
         rings: [
-          { id: 'hero-ex', frac: c.fraction, color: 'var(--accent)' },
+          { id: 'hero-ex', frac: pct / 100, color: 'var(--accent)' },
           { id: 'hero-steps', frac: st.stepsTarget ? steps / st.stepsTarget : 0, color: 'var(--steps)' },
           { id: 'hero-protein', frac: st.proteinTarget ? protein / st.proteinTarget : 0, color: 'var(--protein)' },
         ],
@@ -214,7 +217,7 @@ function heroCard(k, day, st) {
       <div class="hero-side">
         <button type="button" class="level-chip press" data-action="achievements" aria-label="רמה ${L.level} · הישגים">
           ${ring({ id: 'level-chip', size: 34, stroke: 4, frac: L.frac, inner: `<span class="level-chip-num">${num(L.level)}</span>` })}
-          <span>רמה ${num(L.level)}</span>
+          <span class="level-chip-txt"><small>רמה</small><b>${num(`${fmt(L.xp - L.base)}/${fmt(L.next - L.base)}`)} נק׳</b></span>
         </button>
         <div class="streak ${streak ? 'on' : ''}">${icon('flame')}<span class="streak-num">${num(streak)}</span></div>
         <div class="caption">${streak === 1 ? 'יום רצף' : 'ימי רצף'}</div>
@@ -377,7 +380,9 @@ function setsBody(ex, entry) {
       <span class="chip-lbl">${done && s.weight ? `${num(s.weight)} ק״ג` : `סט ${num(i + 1)}`}</span>
     </button>`;
   }
-  return `<div class="chips">${chips}</div><p class="hint">הקשה מסמנת סט · לחיצה ארוכה לעריכת חזרות</p>`;
+  // The how-to hint shows once (first sets card) instead of repeating on every card.
+  const first = exercisesForDay(ctxDate).find((e) => e.type === 'setsReps')?.id === ex.id;
+  return `<div class="chips">${chips}</div>${first ? '<p class="hint">הקשה מסמנת סט · לחיצה ארוכה לעריכת חזרות</p>' : ''}`;
 }
 
 function timedBody(ex, entry) {

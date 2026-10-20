@@ -1,7 +1,7 @@
 // Automatic insights: deterministic rules over the on-device history. No AI, no network.
 // Each insight: { id, text, kind: 'positive'|'attention'|'neutral', priority 0–100, scope: 'day'|'week', cat }
 // cat (icon category): sleep | food | activity | strength | weight | consistency
-import { getState, getDay, activeExercises } from './storage.js';
+import { getState, getDay, activeExercises, exerciseById } from './storage.js';
 import { addDays, lastNDays, todayKey, weekdayName, parseKey } from './dates.js';
 import { foodTotals, dayCompletion, exercisesForDay, computeRecords, waterMl } from './stats.js';
 import { sleepMinutes, fmtDuration, walkHistory, BADGES } from './progress.js';
@@ -20,6 +20,21 @@ const hasFood = (k) => (days()[k]?.food || []).length > 0;
 export function joinHe(items) {
   if (items.length <= 1) return items.join('');
   return `${items.slice(0, -1).join(', ')} ו${items[items.length - 1]}`;
+}
+
+/** Hebrew prefix letter (ב / מ) on a name; a hyphen before non-Hebrew names or digits. */
+const pre = (letter, name) => (/^[\u05D0-\u05EA]/.test(name) ? `${letter}${name}` : `${letter}-${name}`);
+
+/** Natural-language text for a personal record (new: true) on a record id. */
+function recordText(id, value, name) {
+  const [kind] = id.split(':');
+  if (kind === 'reps') return `שיא חדש ${pre('ב', name)}: ${plural(value, 'חזרה אחת', 'חזרות')} בסט`;
+  if (kind === 'w') return `שיא חדש ${pre('ב', name)}: ${trim(value, 1)} ק״ג`;
+  if (kind === 'sec') return `שיא חדש ${pre('ב', name)}: ${plural(value, 'שנייה אחת', 'שניות')}`;
+  if (id === 'ride') return `שיא חדש ברכיבה: ${trim(value, 1)} ק״מ`;
+  if (id === 'steps') return `שיא חדש בצעדים: ${int(value)} צעדים ביום`;
+  if (id === 'climbs') return `שיא חדש במדרגות: ${plural(value, 'עלייה אחת', 'עליות')} ביום`;
+  return `שיא אישי חדש: ${trim(value, 1)}`;
 }
 
 /** "50 דקות" / "1:10 שעות" */
@@ -82,7 +97,7 @@ export function dayInsights(k) {
     for (const f of food) by.set(f.name, (by.get(f.name) || 0) + (Number(f.kcal) || 0));
     const [name, kcal] = [...by.entries()].sort((a, b) => b[1] - a[1])[0];
     const pct = Math.round((kcal / total) * 100);
-    if (by.size >= 2 && pct >= 30) out.push(day('bigItem', `${name} היה ${pct}% מהקלוריות של היום`, 'neutral', 50, 'food'));
+    if (by.size >= 2 && pct >= 30) out.push(day('bigItem', `${pct}% מהקלוריות של היום הגיעו ${pre('מ', name)}`, 'neutral', 50, 'food'));
   }
 
   // 3. Calories from low-protein foods (< 5 g protein per 100 kcal), ≥ 25% of the day
@@ -111,8 +126,8 @@ export function dayInsights(k) {
   // 6 + 7. Personal records: new today, or within 10% of one
   const { records, events } = computeRecords();
   for (const e of events.filter((ev) => ev.date === k)) {
-    out.push(day(`newRecord:${e.id}`, `שיא אישי חדש: ${e.label} — ${trim(e.value, 1)} ${e.unit}`, 'positive', 90,
-      e.id.includes(':') ? 'strength' : 'activity'));
+    const exName = e.id.includes(':') ? exerciseById(e.id.split(':')[1])?.name || '' : '';
+    out.push(day(`newRecord:${e.id}`, recordText(e.id, e.value, exName), 'positive', 90, e.id.includes(':') ? 'strength' : 'activity'));
   }
   const newIds = new Set(events.filter((ev) => ev.date === k).map((ev) => ev.id));
   for (const ex of exercisesForDay(k)) {
@@ -122,9 +137,9 @@ export function dayInsights(k) {
       if (!rec || !val || newIds.has(rec.id) || val >= rec.value || val < rec.value * 0.9) return;
       out.push(day(`nearRecord:${key}:${ex.id}`, txt(rec.value - val), 'positive', 58, 'strength'));
     };
-    check('reps', b.reps, (n) => `עוד ${plural(n, 'חזרה אחת', 'חזרות')} לשיא שלך ב${ex.name}`);
-    check('w', b.weight, (n) => `עוד ${trim(n, 1)} ק״ג לשיא המשקל שלך ב${ex.name}`);
-    check('sec', b.sec, (n) => `עוד ${plural(n, 'שנייה אחת', 'שניות')} לשיא שלך ב${ex.name}`);
+    check('reps', b.reps, (n) => `עוד ${plural(n, 'חזרה אחת', 'חזרות')} לשיא שלך ${pre('ב', ex.name)}`);
+    check('w', b.weight, (n) => `עוד ${trim(n, 1)} ק״ג לשיא המשקל שלך ${pre('ב', ex.name)}`);
+    check('sec', b.sec, (n) => `עוד ${plural(n, 'שנייה אחת', 'שניות')} לשיא שלך ${pre('ב', ex.name)}`);
   }
 
   // 8. Sleep last night vs target, and vs the previous 7 days' average (min 3 nights, diff ≥ 45 min)
@@ -198,8 +213,13 @@ export function weekInsights(today = todayKey()) {
     const up = pct > 0;
     const kind = m.good === null ? 'neutral' : up ? 'positive' : 'attention';
     const base = kind === 'positive' ? 60 : kind === 'attention' ? 55 : 45;
-    out.push(week(`wow:${m.id}`, `${m.name} ${up ? 'עלה' : 'ירד'} ב-${Math.abs(pct)}% לעומת השבוע הקודם`, kind,
-      base + Math.min(15, Math.round(Math.abs(pct) / 10)), m.cat));
+    // Percent-of-a-percent and percent-of-hours read badly — show the actual values for those.
+    const text = m.id === 'completion'
+      ? `השלמת האימונים ${up ? 'עלתה' : 'ירדה'} מ-${Math.round(vb * 100)}% ל-${Math.round(va * 100)}% לעומת השבוע הקודם`
+      : m.id === 'sleep'
+        ? `ממוצע השינה ${up ? 'עלה' : 'ירד'} מ-${fmtDuration(vb)} ל-${fmtDuration(va)} שעות לעומת השבוע הקודם`
+        : `${m.name} ${up ? 'עלה' : 'ירד'} ב-${Math.abs(pct)}% לעומת השבוע הקודם`;
+    out.push(week(`wow:${m.id}`, text, kind, base + Math.min(15, Math.round(Math.abs(pct) / 10)), m.cat));
   }
 
   // 2 + 3. Sleep → next-day calories / same-day workout completion (all history, ≥ 3 days per group)
@@ -216,8 +236,8 @@ export function weekInsights(today = todayKey()) {
     const diff = avg(ks) - avg(kg);
     if (Math.abs(diff) >= 200) {
       out.push(diff > 0
-        ? week('sleepKcal', `אחרי לילות של פחות מ-6 שעות שינה אכלת בממוצע ${kcalText(diff)} יותר ביום שאחרי`, 'attention', 68, 'sleep')
-        : week('sleepKcal', `אחרי לילות של פחות מ-6 שעות שינה אכלת בממוצע ${kcalText(-diff)} פחות ביום שאחרי`, 'neutral', 50, 'sleep'));
+        ? week('sleepKcal', `בימים שאחרי לילה של פחות מ-6 שעות שינה אכלת בממוצע ${kcalText(diff)} יותר`, 'attention', 68, 'sleep')
+        : week('sleepKcal', `בימים שאחרי לילה של פחות מ-6 שעות שינה אכלת בממוצע ${kcalText(-diff)} פחות`, 'neutral', 50, 'sleep'));
     }
   }
   const compOf = (keys) => keys.filter((k) => !days()[k].rest && dayCompletion(k).total > 0).map((k) => dayCompletion(k).fraction * 100);
@@ -269,7 +289,7 @@ export function weekInsights(today = todayKey()) {
     for (const [name, e] of by) {
       const share = weekKcal ? e.kcal / weekKcal : 0;
       if (e.kcal > 0 && (e.protein / e.kcal) * 100 < 5 && share >= 0.1) {
-        out.push(week(`lowDensity:${name}`, `${Math.round(share * 100)}% מהקלוריות של השבוע הגיעו מ${name}, מזון דל חלבון`, 'attention', 52, 'food'));
+        out.push(week(`lowDensity:${name}`, `${Math.round(share * 100)}% מהקלוריות של השבוע הגיעו ${pre('מ', name)}, מזון דל חלבון`, 'attention', 52, 'food'));
       }
     }
   }
@@ -282,7 +302,7 @@ export function weekInsights(today = todayKey()) {
     const diff = Math.round((avg(wa) - avg(wb)) * 10) / 10;
     if (Math.abs(diff) >= 0.1) {
       const toward = st.targetWeight && st.startWeight ? Math.sign(st.targetWeight - st.startWeight) === Math.sign(diff) : false;
-      out.push(week('weight', `הממוצע השבועי של המשקל ${diff < 0 ? 'ירד' : 'עלה'} ב-${trim(Math.abs(diff), 1)} ק״ג לעומת השבוע הקודם`,
+      out.push(week('weight', `המשקל הממוצע ${diff < 0 ? 'ירד' : 'עלה'} ב-${trim(Math.abs(diff), 1)} ק״ג לעומת השבוע הקודם`,
         toward ? 'positive' : 'neutral', 64, 'weight'));
     }
   }
@@ -294,7 +314,7 @@ export function weekInsights(today = todayKey()) {
     const now = best(cur), old = best(then);
     if (now > 0 && old > 0) {
       const pct = Math.round(((now - old) / old) * 100);
-      if (pct >= 10) out.push(week(`progress:${ex.id}`, `${ex.name}: שיפור של ${pct}% לעומת לפני 4 שבועות`, 'positive', 72, 'strength'));
+      if (pct >= 10) out.push(week(`progress:${ex.id}`, `שיפור של ${pct}% ${pre('ב', ex.name)} לעומת לפני 4 שבועות`, 'positive', 72, 'strength'));
     }
   }
 
