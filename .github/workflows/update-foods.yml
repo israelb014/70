@@ -1,5 +1,7 @@
-# Rebuilds data/foods.json with the Ministry of Health "צמרת" food composition data.
+# Rebuilds data/foods.json with the Ministry of Health national nutrition database ("צמרת").
 # Run manually: Actions → update-foods → Run workflow.
+# Data is fetched per resource via the CKAN Datastore API, then a direct download, then a
+# local copy in data/raw/ (upload moh_mitzrachim.csv there if data.gov.il blocks the runner).
 name: update-foods
 
 on:
@@ -13,14 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-
-      - name: Install XLSX reader
-        run: pip install openpyxl==3.1.5
 
       - name: Build food database (curated + label + Tzameret)
         run: python tools/build_foods.py --tzameret

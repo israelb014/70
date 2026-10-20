@@ -11,16 +11,19 @@ Usage (from the repository root):
   python3 tools/build_foods.py --tzameret   # also download "צמרת" from data.gov.il and merge
                                             # (used by .github/workflows/update-foods.yml)
 
-With --tzameret the script finds the dataset via the CKAN API, prints every table's column
-headers, auto-detects the name / energy / protein columns (and a portion-weights table if
-present), and merges. If anything essential is missing it exits with an error and does NOT
-overwrite the existing files.
+With --tzameret the script loads the Ministry of Health dataset (data.gov.il dataset
+d4f9c425-d657-4852-bd58-0cceb96a5f6d) — per resource via the CKAN Datastore API, then a direct
+download with browser-like headers, then a local copy in data/raw/ — prints every table's
+columns, auto-detects name / energy / protein (+ unit weights), and merges. If anything
+essential is missing it exits with an error and does NOT overwrite the existing files.
 """
 import csv
 import io
 import json
 import re
 import sys
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -597,90 +600,197 @@ def local_foods():
 
 
 # ---------------------------------------------------------------- Tzameret (data.gov.il)
+#
+# "מאגר התזונה הלאומי הישראלי" (Ministry of Health). data.gov.il answers direct file downloads
+# from GitHub's runners with 403, so every resource is tried with three methods, in order:
+#   1. CKAN Datastore API (datastore_search, paginated)
+#   2. direct file download with browser-like headers (3 retries, 5/10/20 s backoff)
+#   3. a local copy committed to data/raw/<file>.csv (UTF-8, UTF-8-BOM or windows-1255)
 
-CKAN = 'https://data.gov.il/api/3/action/package_search?rows=50&q='
-QUERIES = ['צמרת', 'nutrition', 'מזון']
+DATASET_ID = 'd4f9c425-d657-4852-bd58-0cceb96a5f6d'
+API = 'https://data.gov.il/api/3/action/'
+RESOURCES = {
+    # key: (resource id, file name, required)
+    'foods': ('c3cb0630-0650-46c1-a068-82d575c094b2', 'moh_mitzrachim.csv', True),
+    'units': ('98fb46fe-e8de-4067-94d2-b0a8ea4269da', 'moh_yehidot_mida.csv', False),
+    'food_units': ('755d28c0-75f7-40e1-9c8c-ecdd106f9b2d', 'moh_yehidot_mida_lemitzrachim.csv', False),
+}
+RAW_DIR = ROOT / 'data' / 'raw'
+HEADERS = {
+    'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
+                   '(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'),
+    'Accept': 'text/csv,application/octet-stream,*/*',
+    'Accept-Language': 'he-IL,he;q=0.9',
+    'Referer': f'https://data.gov.il/dataset/{DATASET_ID}',
+}
+PAGE = 5000
+BACKOFF = (5, 10, 20)
+SLEEP = time.sleep  # replaced in tests
+UPLOAD_HINT = ('כדי לעקוף את החסימה: הורד את הקובץ moh_mitzrachim.csv מאתר data.gov.il, '
+               'העלה אותו לתיקייה data/raw/ דרך אתר GitHub, והרץ שוב את ה-workflow update-foods.')
+
+
+class TzameretError(Exception):
+    pass
 
 
 def fail(msg, found=None):
     print('\n::error::' + msg)
     if found:
-        print('What was found:')
+        print('Details:')
         for line in found:
             print('  - ' + line)
     print('foods.json was NOT changed.')
+    print(UPLOAD_HINT)
     sys.exit(1)
 
 
 def http_get(url, timeout=120):
-    req = urllib.request.Request(url, headers={'User-Agent': 'seventy-food-builder/1.0'})
+    """GET with browser-like headers (used for the CKAN calls and the downloads alike)."""
+    req = urllib.request.Request(url, headers=HEADERS)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
 
-def find_resources():
-    found_log, resources = [], []
-    for q in QUERIES:
+def err_text(e):
+    if isinstance(e, urllib.error.HTTPError):
+        return f'HTTP {e.code} {e.reason}'
+    return f'{type(e).__name__}: {e}'
+
+
+def decode_text(raw):
+    for enc in ('utf-8-sig', 'cp1255'):
         try:
-            data = json.loads(http_get(CKAN + urllib.parse.quote(q)))
-        except Exception as e:  # noqa: BLE001
-            found_log.append(f'query "{q}": request failed ({e})')
+            return raw.decode(enc), enc
+        except UnicodeDecodeError:
             continue
-        results = data.get('result', {}).get('results', [])
-        found_log.append(f'query "{q}": {len(results)} datasets')
-        for pkg in results:
-            text = ' '.join(str(pkg.get(k, '')) for k in ('title', 'name', 'notes')).lower()
-            relevant = any(w in text for w in ('צמרת', 'tzameret', 'מרכיבי מזון', 'הרכב מזון', 'nutrient', 'nutrition'))
-            fmts = [str(r.get('format', '')).upper() for r in pkg.get('resources', [])]
-            found_log.append(f'  {"*" if relevant else " "} {pkg.get("title")} [{pkg.get("name")}] formats={fmts}')
-            if not relevant:
-                continue
-            for r in pkg.get('resources', []):
-                fmt = str(r.get('format', '')).upper()
-                url = r.get('url', '')
-                if fmt in ('CSV', 'XLSX', 'XLS') or url.lower().endswith(('.csv', '.xlsx', '.xls')):
-                    resources.append({'pkg': pkg.get('title'), 'name': r.get('name'), 'fmt': fmt, 'url': url})
-        if resources:
+    return raw.decode('utf-8', errors='replace'), 'utf-8 (with replacements)'
+
+
+def parse_csv(raw):
+    text, enc = decode_text(raw)
+    reader = csv.DictReader(io.StringIO(text))
+    headers = [(h or '').strip() for h in (reader.fieldnames or [])]
+    rows = [{(k or '').strip(): v for k, v in row.items()} for row in reader]
+    return headers, rows, enc
+
+
+def discover():
+    """Confirm the dataset and resource URLs via CKAN (same headers). Returns {resource id: url}."""
+    urls, log = {}, []
+    for url in [API + 'package_show?id=' + DATASET_ID] + [
+            API + 'package_search?rows=20&q=' + urllib.parse.quote(q) for q in ('צמרת', 'nutrition', 'מזון')]:
+        try:
+            data = json.loads(http_get(url, timeout=60))
+        except Exception as e:  # noqa: BLE001
+            log.append(f'CKAN {url.split("action/")[1][:40]}: {err_text(e)}')
+            continue
+        result = data.get('result', {})
+        pkgs = result.get('results', [result]) if isinstance(result, dict) else []
+        for pkg in pkgs:
+            for r in pkg.get('resources', []) or []:
+                if r.get('id') and r.get('url'):
+                    urls[r['id']] = r['url']
+        if any(rid in urls for rid, _, _ in RESOURCES.values()):
+            print(f'Dataset found via CKAN: {pkgs[0].get("title", DATASET_ID)}')
             break
-    return resources, found_log
+    return urls, log
 
 
-def read_table(raw, fmt, url):
-    """Return list of tables; each table = (headers, rows as dicts)."""
-    tables = []
-    if fmt in ('XLSX', 'XLS') or url.lower().endswith(('.xlsx', '.xls')):
-        import openpyxl  # installed by the workflow
-        wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
-        for ws in wb.worksheets:
-            rows = list(ws.iter_rows(values_only=True))
-            if not rows:
-                continue
-            headers = [str(h).strip() if h is not None else '' for h in rows[0]]
-            tables.append((headers, [dict(zip(headers, r)) for r in rows[1:]]))
-    else:
-        for enc in ('utf-8-sig', 'cp1255', 'latin-1'):
-            try:
-                text = raw.decode(enc)
-                break
-            except UnicodeDecodeError:
-                continue
-        reader = csv.DictReader(io.StringIO(text))
-        headers = [h.strip() for h in (reader.fieldnames or [])]
-        tables.append((headers, [{(k or '').strip(): v for k, v in row.items()} for row in reader]))
-    return tables
+def via_datastore(rid):
+    headers, rows, offset, total = None, [], 0, None
+    while total is None or offset < total:
+        url = f'{API}datastore_search?resource_id={rid}&limit={PAGE}&offset={offset}'
+        data = json.loads(http_get(url, timeout=120))
+        if not data.get('success', True):
+            raise TzameretError(f'datastore_search: {data.get("error")}')
+        res = data['result']
+        if headers is None:
+            headers = [f['id'] for f in res.get('fields', []) if f.get('id') != '_id']
+        total = int(res.get('total') or 0)
+        batch = res.get('records', [])
+        rows.extend({k: v for k, v in rec.items() if k != '_id'} for rec in batch)
+        if not batch:
+            break
+        offset += len(batch)
+    if not rows:
+        raise TzameretError('datastore_search returned no records')
+    return headers, rows, f'{len(rows)} records of {total}'
+
+
+def via_download(rid, fname, known_urls):
+    url = known_urls.get(rid) or f'https://data.gov.il/dataset/{DATASET_ID}/resource/{rid}/download/{fname}'
+    errors = []
+    for attempt in range(len(BACKOFF) + 1):
+        try:
+            headers, rows, enc = parse_csv(http_get(url, timeout=300))
+            return headers, rows, f'{len(rows)} rows ({enc}) from {url}'
+        except Exception as e:  # noqa: BLE001
+            errors.append(err_text(e))
+            if attempt < len(BACKOFF):
+                SLEEP(BACKOFF[attempt])
+    raise TzameretError(f'{url}: ' + ' | '.join(f'try {i + 1}: {m}' for i, m in enumerate(errors)))
+
+
+def via_local(fname):
+    path = RAW_DIR / fname
+    if not path.exists():
+        raise TzameretError(f'{path.relative_to(ROOT)} not found')
+    headers, rows, enc = parse_csv(path.read_bytes())
+    return headers, rows, f'{len(rows)} rows ({enc}) from {path.relative_to(ROOT)}'
+
+
+def fetch_resource(key, known_urls, report):
+    rid, fname, _ = RESOURCES[key]
+    attempts = []
+    for method, fn in (('datastore API', lambda: via_datastore(rid)),
+                       ('direct download', lambda: via_download(rid, fname, known_urls)),
+                       (f'local data/raw/{fname}', lambda: via_local(fname))):
+        try:
+            headers, rows, info = fn()
+            attempts.append(f'{method}: OK — {info}')
+            report.append(f'{fname}: ' + ' ; '.join(attempts))
+            print(f'\n{fname}: loaded via {method} — {info}')
+            print('  columns: ' + ' | '.join(headers))
+            return headers, rows
+        except Exception as e:  # noqa: BLE001
+            attempts.append(f'{method}: FAILED — {err_text(e) if not isinstance(e, TzameretError) else e}')
+    report.append(f'{fname}: ' + ' ; '.join(attempts))
+    return None
+
+
+# ---- column detection
+
+HEB = re.compile(r'[\u05D0-\u05EA]')
 
 
 def pick_col(headers, candidates, avoid=()):
-    low = {h: h.lower() for h in headers}
+    """Exact (case-insensitive) match first, then substring; Hebrew and transliterated names."""
+    low = {h: str(h).lower().strip() for h in headers}
     for cand in candidates:
         for h, l in low.items():
-            if l == cand:
+            if l == cand and not any(a in l for a in avoid):
                 return h
     for cand in candidates:
         for h, l in low.items():
             if cand in l and not any(a in l for a in avoid):
                 return h
     return None
+
+
+def hebrew_text_col(headers, rows):
+    """Column whose values are mostly Hebrew text (not numbers)."""
+    best, best_share = None, 0.0
+    sample = rows[:300]
+    for h in headers:
+        vals = [str(r.get(h) or '').strip() for r in sample]
+        vals = [v for v in vals if v]
+        if not vals:
+            continue
+        share = sum(1 for v in vals if HEB.search(v) and to_float(v) is None) / len(vals)
+        if share > best_share:
+            best, best_share = h, share
+    return best if best_share >= 0.6 else None
 
 
 def to_float(v):
@@ -690,67 +800,96 @@ def to_float(v):
         return None
 
 
+def code_key(v):
+    """Normalize codes so 123, "123" and "123.0" join."""
+    f = to_float(v)
+    if f is not None and f == int(f):
+        return str(int(f))
+    return str(v or '').strip()
+
+
+def detect_food_columns(headers, rows):
+    name = pick_col(headers, ['shmmitzrach', 'שם מצרך', 'שם המצרך', 'hebrew_name', 'name_heb', 'שם'],
+                    avoid=('english', 'אנגלית', 'eng', 'mida', 'מידה'))
+    if not name:
+        name = hebrew_text_col(headers, rows)
+    energy = pick_col(headers, ['food_energy', 'energy_kcal', 'kcal', 'קלוריות', 'קלור', 'אנרגיה', 'energy'])
+    protein = pick_col(headers, ['protein', 'חלבון', 'חלבונים'])
+    code = pick_col(headers, ['smlmitzrach', 'mmitzrach', 'code', 'קוד מצרך', 'קוד'])
+    return name, energy, protein, code
+
+
+def unit_map(units_tbl, link_tbl):
+    """{food code: [{l, g}]} from moh_yehidot_mida (names) + moh_yehidot_mida_lemitzrachim (grams)."""
+    if not link_tbl:
+        return {}, 'no unit-weights table'
+    lh, lrows = link_tbl
+    l_food = pick_col(lh, ['mmitzrach', 'smlmitzrach', 'קוד מצרך', 'code_mitzrach', 'mitzrach'])
+    l_unit = pick_col(lh, ['mida', 'smlmida', 'קוד מידה', 'code_mida', 'יחידת מידה'], avoid=('shm', 'שם'))
+    l_grams = pick_col(lh, ['mishkal', 'משקל', 'weight', 'grams', 'גרם'])
+    names = {}
+    if units_tbl:
+        uh, urows = units_tbl
+        u_code = pick_col(uh, ['smlmida', 'mida', 'קוד מידה', 'code', 'קוד'], avoid=('shm', 'שם'))
+        u_name = pick_col(uh, ['shmmida', 'שם מידה', 'שם יחידה', 'name', 'שם']) or hebrew_text_col(uh, urows)
+        if u_code and u_name:
+            names = {code_key(r.get(u_code)): str(r.get(u_name) or '').strip() for r in urows}
+        print(f'Units table columns: code="{u_code}" name="{u_name}" ({len(names)} units)')
+    l_label = None if names else (pick_col(lh, ['shmmida', 'שם מידה']) or hebrew_text_col(lh, lrows))
+    print(f'Unit-weights columns: food="{l_food}" unit="{l_unit}" grams="{l_grams}"')
+    if not (l_food and l_grams and (l_unit or l_label)):
+        return {}, f'unit columns not detected in {", ".join(lh)}'
+    out = {}
+    for r in lrows:
+        g = to_float(r.get(l_grams))
+        label = names.get(code_key(r.get(l_unit))) if names and l_unit else str(r.get(l_label) or '').strip()
+        if g and g > 0 and label:
+            out.setdefault(code_key(r.get(l_food)), []).append({'l': label, 'g': num(g)})
+    return out, f'{sum(len(v) for v in out.values())} unit weights for {len(out)} foods'
+
+
 def tzameret_foods():
-    resources, found_log = find_resources()
-    if not resources:
-        fail('Could not find the Tzameret dataset (CSV/XLSX) on data.gov.il.', found_log)
-    print('Resources:')
-    for r in resources:
-        print(f'  {r["pkg"]} / {r["name"]} ({r["fmt"]}) {r["url"]}')
+    known_urls, log = discover()
+    report = list(log)
+    # Try every resource first so a failure report lists all of them.
+    foods_tbl = fetch_resource('foods', known_urls, report)
+    units_tbl = fetch_resource('units', known_urls, report)
+    link_tbl = fetch_resource('food_units', known_urls, report)
+    if not foods_tbl:
+        fail('Could not load moh_mitzrachim.csv with any method.', report)
 
-    main, units_tables, seen_headers = None, [], []
-    for r in resources:
-        try:
-            raw = http_get(r['url'], timeout=300)
-            tables = read_table(raw, r['fmt'], r['url'])
-        except Exception as e:  # noqa: BLE001
-            seen_headers.append(f'{r["name"]}: download/parse failed ({e})')
-            continue
-        for headers, rows in tables:
-            print(f'\nTable "{r["name"]}" — {len(rows)} rows. Columns:')
-            print('  ' + ' | '.join(headers))
-            seen_headers.append(f'{r["name"]} ({len(rows)} rows): {", ".join(headers)}')
-            name_c = pick_col(headers, ['shmmitzrach', 'hebrew_name', 'שם מצרך', 'שם המצרך', 'שם', 'name'], avoid=('english', 'אנגלית', 'mida', 'מידה'))
-            energy_c = pick_col(headers, ['food_energy', 'energy_kcal', 'energy', 'אנרגיה', 'קלוריות', 'kcal'])
-            protein_c = pick_col(headers, ['protein', 'חלבון', 'חלבונים'])
-            weight_c = pick_col(headers, ['mishkal', 'weight', 'משקל', 'grams', 'גרם'])
-            unit_c = pick_col(headers, ['shmmida', 'mida', 'unit_name', 'מידה', 'יחידה', 'portion'])
-            code_c = pick_col(headers, ['smlmitzrach', 'mmitzrach', 'code', 'קוד מצרך', 'קוד'])
-            if name_c and energy_c and protein_c and (main is None or len(rows) > len(main[1])):
-                main = (headers, rows, name_c, energy_c, protein_c, code_c)
-            elif unit_c and weight_c and code_c:
-                units_tables.append((rows, code_c, unit_c, weight_c))
+    headers, rows = foods_tbl
+    name_c, energy_c, protein_c, code_c = detect_food_columns(headers, rows)
+    if not (name_c and energy_c):
+        fail('moh_mitzrachim.csv was loaded, but the name/energy columns were not detected.',
+             report + [f'columns: {", ".join(headers)}', f'detected name="{name_c}" energy="{energy_c}" protein="{protein_c}"'])
+    el = energy_c.lower()
+    kj = 'kj' in el or 'קילוג' in el or "ג'ול" in el or 'ג׳ול' in el
+    print(f'\nUsing columns: name="{name_c}" energy="{energy_c}"{" (kJ ÷ 4.184)" if kj else " (kcal)"} '
+          f'protein="{protein_c}" code="{code_c}"')
 
-    if not main:
-        fail('Found tables, but none with Hebrew name + energy + protein columns.', seen_headers)
-    headers, rows, name_c, energy_c, protein_c, code_c = main
-    kj = 'kj' in energy_c.lower() or "ג'ול" in energy_c or 'ג׳ול' in energy_c
-    print(f'\nUsing columns: name="{name_c}" energy="{energy_c}"{" (kJ → kcal)" if kj else ""} protein="{protein_c}" code="{code_c}"')
-
-    units_by_code = {}
-    for urows, ucode, ulabel, uweight in units_tables:
-        print(f'Units table: code="{ucode}" label="{ulabel}" grams="{uweight}" ({len(urows)} rows)')
-        for row in urows:
-            g = to_float(row.get(uweight))
-            label = str(row.get(ulabel) or '').strip()
-            if g and g > 0 and label:
-                units_by_code.setdefault(str(row.get(ucode)).strip(), []).append({'l': label, 'g': num(g)})
+    units, units_info = unit_map(units_tbl, link_tbl)
+    print(f'Units: {units_info}')
 
     foods = []
     for row in rows:
         name = str(row.get(name_c) or '').strip()
-        kcal, protein = to_float(row.get(energy_c)), to_float(row.get(protein_c))
-        if not name or kcal is None or protein is None:
+        kcal = to_float(row.get(energy_c))
+        if not name or kcal is None:
             continue
         if kj:
             kcal /= 4.184
+        protein = to_float(row.get(protein_c)) if protein_c else None
+        protein = protein if protein is not None else 0.0
         if not (0 <= kcal <= 900 and 0 <= protein <= 100):
             continue
-        code = str(row.get(code_c)).strip() if code_c else None
-        foods.append({'n': name, 'k': num(kcal), 'p': num(protein), 'u': units_by_code.get(code, [])[:8], 's': 'tzameret'})
+        u = units.get(code_key(row.get(code_c)), []) if code_c else []
+        foods.append({'n': name, 'k': int(round(kcal)), 'p': round(protein, 1), 'u': u[:8], 's': 'tzameret'})
     if len(foods) < 300:
-        fail(f'Only {len(foods)} usable Tzameret rows were parsed (expected hundreds).', seen_headers)
+        fail(f'Only {len(foods)} usable rows were parsed from moh_mitzrachim.csv (expected thousands).',
+             report + [f'columns: {", ".join(headers)}'])
     print(f'Parsed {len(foods)} Tzameret foods.')
+    print('Sources: ' + ' || '.join(report))
     return foods
 
 
