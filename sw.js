@@ -1,5 +1,5 @@
 // Service worker: cache-first for app files and the Heebo font. Versioned cache; old caches removed.
-const CACHE_VERSION = '1.5.3';
+const CACHE_VERSION = '1.6.0';
 const CACHE = `seventy-${CACHE_VERSION}`;
 
 const APP_FILES = [
@@ -37,6 +37,9 @@ const APP_FILES = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
+  './icons/shortcut-water.png',
+  './icons/shortcut-food.png',
+  './icons/shortcut-scan.png',
 ];
 
 // The food database (data/foods.json + data/foods-meta.json) is not precached: it loads lazily

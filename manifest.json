@@ -30,5 +30,49 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ]
+  ],
+  "shortcuts": [
+    {
+      "name": "הוספת מים",
+      "short_name": "מים",
+      "url": "./?action=water",
+      "icons": [
+        {
+          "src": "icons/shortcut-water.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "הוספת אוכל",
+      "short_name": "אוכל",
+      "url": "./?action=food",
+      "icons": [
+        {
+          "src": "icons/shortcut-food.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "סריקת ברקוד",
+      "short_name": "סריקה",
+      "url": "./?action=scan",
+      "icons": [
+        {
+          "src": "icons/shortcut-scan.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
+  }
 }

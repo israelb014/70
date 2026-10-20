@@ -54,6 +54,10 @@ export function normalize(d) {
       lastSeenLevel: Number.isFinite(d.meta.lastSeenLevel) ? d.meta.lastSeenLevel : null,
       seenBadges: Array.isArray(d.meta.seenBadges) ? d.meta.seenBadges.filter((b) => typeof b === 'string') : [],
     };
+    // Optional ISO timestamps (no schema bump): last completed backup, backup reminder snoozed until.
+    for (const key of ['lastBackupAt', 'backupSnoozeUntil']) {
+      if (typeof d.meta[key] === 'string' && !Number.isNaN(Date.parse(d.meta[key]))) s.meta[key] = d.meta[key];
+    }
   }
   s.exercises = Array.isArray(d.exercises) ? d.exercises.filter((e) => isObj(e) && e.id && e.name) : [];
   s.mealPresets = Array.isArray(d.mealPresets) ? d.mealPresets.filter((m) => isObj(m) && m.id) : [];

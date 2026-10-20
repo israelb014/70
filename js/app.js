@@ -1,7 +1,7 @@
 // Entry point: tab routing, shared context and service worker registration.
 import { getState, setSaveErrorHandler, updateMeta } from './storage.js';
 import { todayKey } from './dates.js';
-import { icon, tabIcon, toast, queueToast, bindLongPress, countUp, confetti, vibrate, HAPTIC } from './ui.js';
+import { icon, tabIcon, toast, queueToast, bindLongPress, countUp, confetti, vibrate, HAPTIC, reducedMotion } from './ui.js';
 import { levelInfo, walkHistory, BADGES } from './progress.js';
 import { medallion } from './badgeArt.js';
 import { celebrateLevel } from './celebrate.js';
@@ -167,7 +167,51 @@ document.addEventListener('visibilitychange', () => {
 
 setSaveErrorHandler(() => toast('השמירה נכשלה — ייתכן שהאחסון מלא'));
 
+/**
+ * Home-screen shortcuts (manifest "shortcuts"): ./?action=water | food | scan.
+ * Unknown or missing actions start normally; nothing happens before the setup wizard is done.
+ */
+function runAction(action) {
+  if (!getState().settings || !['water', 'food', 'scan'].includes(action)) return;
+  document.querySelectorAll('.sheet-backdrop').forEach((s) => s.remove());
+  document.body.classList.remove('no-scroll');
+  ctx.date = todayKey();
+  if (action === 'water') {
+    ctx.goTab('today');
+    const card = main.querySelector('.water-card');
+    if (!card) return;
+    requestAnimationFrame(() => {
+      card.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'center' });
+      card.classList.add('pulse');
+      setTimeout(() => card.classList.remove('pulse'), 1000);
+    });
+  } else {
+    ctx.goTab('food');
+    if (action === 'food') main.querySelector('[data-search]')?.focus();
+    else main.querySelector('[data-action="scan"]')?.click();
+  }
+}
+
+// Read the shortcut action once, then drop it from the address so a reload starts normally.
+const launchHref = location.href;
+const launchUrl = new URL(launchHref);
+const launchAction = launchUrl.searchParams.get('action');
+if (launchUrl.searchParams.has('action')) {
+  launchUrl.searchParams.delete('action');
+  history.replaceState(history.state, '', launchUrl.pathname + launchUrl.search + launchUrl.hash);
+}
+
 render();
+runAction(launchAction);
+
+// App already open in the background: the launch handler navigates it (a fresh load, handled above);
+// browsers that focus the existing window instead deliver the shortcut URL here.
+if ('launchQueue' in window) {
+  window.launchQueue.setConsumer((params) => {
+    if (!params.targetURL || params.targetURL === launchHref) return;
+    runAction(new URL(params.targetURL).searchParams.get('action'));
+  });
+}
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {

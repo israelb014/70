@@ -43,6 +43,8 @@ const P = {
   bottle: '<path d="M10 2.5h4M10.5 2.5v3L8.5 8.5v11a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2v-11l-2-3v-3"/><path d="M8.5 12.5h7"/>',
   bed: '<path d="M3 18V6M3 14h18v4M21 14v-2.5a3 3 0 0 0-3-3h-7v5.5"/><circle cx="7" cy="11" r="1.8"/>',
   alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.5h.01"/>',
+  backup: '<path d="M7.5 18.5H7a4.5 4.5 0 0 1-.6-9 6 6 0 0 1 11.4 1A4 4 0 0 1 17 18.5h-.5"/><path d="M12 20.5v-8M8.8 15.5l3.2-3.2 3.2 3.2"/>',
+  share: '<circle cx="17.5" cy="5.5" r="2.5"/><circle cx="6.5" cy="12" r="2.5"/><circle cx="17.5" cy="18.5" r="2.5"/><path d="M8.7 10.7l6.6-3.9M8.7 13.3l6.6 3.9"/>',
 };
 
 // Filled variants for the active tab (outline when inactive).

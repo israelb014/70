@@ -13,7 +13,7 @@ import { runTimer } from '../timer.js';
 import { levelInfo, sleepMinutes, fmtDuration, lastSleep } from '../progress.js';
 import { waterMl } from '../stats.js';
 import { nowTime } from '../dates.js';
-import { dailySummary, copyText } from '../export.js';
+import { dailySummary, copyText, exportBackup, canShareBackup, shareBackup, backupReminder, snoozeBackupReminder } from '../export.js';
 import { plural, int, trim } from '../hebrew.js';
 import { openTimePicker, timeField } from '../timepicker.js';
 import { dayInsights } from '../insights.js';
@@ -33,6 +33,7 @@ export function render(root, ctx) {
   celebrateNewRecords(ctx, k, rec);
 
   root.innerHTML = `
+    ${backupBanner()}
     ${dateNav(k, '')}
     ${heroCard(k, day, st)}
     ${insightCard(k)}
@@ -250,6 +251,27 @@ export function statusLine(day, st, c, steps, protein) {
   return 'כל היעדים של היום הושגו';
 }
 
+/** Backup reminder (top of "היום"): 7+ days since the last backup, or never with 3+ data days. */
+function backupBanner() {
+  const { show, days } = backupReminder();
+  if (!show) return '';
+  const title = days === null ? 'עוד לא גיבית את הנתונים' : `${days === 1 ? 'עבר' : 'עברו'} ${plural(days, 'יום אחד', 'ימים')} מהגיבוי האחרון`;
+  return `<section class="card backup-banner" aria-label="תזכורת גיבוי">
+    <div class="bb-head">${icon('backup', 'head-ic')}
+      <div class="bb-text"><strong>${esc(title)}</strong>
+        <div class="bb-sub"><span>שמורים רק במכשיר הזה</span>
+          <button type="button" class="bb-later press" data-action="backup-later">אחר כך</button></div>
+      </div>
+    </div>
+    <div class="bb-actions">
+      <button type="button" class="btn primary press" data-action="backup-now">${icon('download')}<span>גיבוי עכשיו</span></button>
+      ${canShareBackup() ? `<button type="button" class="btn secondary press" data-action="backup-share">${icon('share')}<span>שיתוף הקובץ</span></button>` : ''}
+    </div>
+  </section>`;
+}
+
+const STEP_ADDS = [1000, 5000];
+
 function stepsCard(day, st, badge) {
   const target = st.stepsTarget || 0;
   const steps = day.steps || 0;
@@ -264,6 +286,8 @@ function stepsCard(day, st, badge) {
       <div class="grow">
         <label class="field"><span>צעדים ביום הזה</span>
           <input type="number" inputmode="numeric" min="0" data-change="steps" value="${day.steps ?? ''}" placeholder="0" enterkeyhint="done"></label>
+        <div class="steps-add">${STEP_ADDS.map((n) =>
+          `<button type="button" class="chip-btn press" data-action="steps-add" data-n="${n}" aria-label="הוספת ${int(n)} צעדים">\u200E+${int(n)}</button>`).join('')}</div>
         <div class="muted small">יעד ${num(target)}</div>
       </div>
     </div>
@@ -618,6 +642,33 @@ async function onClick(e, ctx) {
     case 'water-undo':
       updateDay(k, (d) => d.water.pop());
       return rerender();
+    case 'backup-now':
+      exportBackup();
+      vibrate(HAPTIC.item);
+      toast('קובץ הגיבוי נוצר');
+      return rerender();
+    case 'backup-share':
+      if (await shareBackup()) {
+        toast('הגיבוי שותף');
+        return rerender();
+      }
+      return;
+    case 'backup-later':
+      snoozeBackupReminder();
+      return rerender();
+    case 'steps-add': {
+      const n = Number(b.dataset.n);
+      const prev = getDay(k).steps ?? null;
+      const before = prev || 0;
+      const target = st.stepsTarget;
+      updateDay(k, (d) => (d.steps = before + n));
+      const reached = target && before < target && before + n >= target;
+      vibrate(reached ? HAPTIC.target : HAPTIC.item);
+      toast(reached ? 'יעד הצעדים הושג' : `נוספו ${int(n)} צעדים`, {
+        action: { label: 'ביטול', onClick: () => { updateDay(k, (d) => (d.steps = prev)); vibrate(HAPTIC.item); ctx.rerender(); } },
+      });
+      return rerender();
+    }
     case 'copy-daily': {
       const ok = await copyText(dailySummary(k));
       toast(ok ? 'הסיכום היומי הועתק' : 'ההעתקה נכשלה');

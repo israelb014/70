@@ -1,5 +1,5 @@
 // Daily / weekly text summaries (clipboard) and JSON backup export / import.
-import { getState, getDay, validateBackup, replaceState } from './storage.js';
+import { getState, getDay, validateBackup, replaceState, updateMeta } from './storage.js';
 import { lastNDays, todayKey, shortDate, weekdayName, fullDate } from './dates.js';
 import { computeRecords, exercisesForDay, foodTotals, floorsOf, dayCompletion, completionPct, sortedFood, waterMl } from './stats.js';
 import { fmt } from './ui.js';
@@ -198,17 +198,83 @@ export async function copyText(text) {
 
 /* ---------- Backup ---------- */
 
-export function exportBackup() {
+/** The backup as a JSON File. lastBackupAt is stamped first so the file matches the saved state. */
+function backupFile() {
+  updateMeta({ lastBackupAt: new Date().toISOString() });
   const json = JSON.stringify(getState(), null, 2);
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
+  return new File([json], `70-backup-${todayKey()}.json`, { type: 'application/json' });
+}
+
+/** Download the backup file and record meta.lastBackupAt. */
+export function exportBackup() {
+  const file = backupFile();
+  const url = URL.createObjectURL(file);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `70-backup-${todayKey()}.json`;
+  a.download = file.name;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** True when the system share sheet accepts files (Android Chrome, iOS Safari). */
+export function canShareBackup() {
+  try {
+    return !!navigator.canShare?.({ files: [new File(['{}'], '70-backup.json', { type: 'application/json' })] });
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Share the backup file through the system share sheet (Drive, WhatsApp, …).
+ * Resolves true on success; lastBackupAt is kept only when the share went through.
+ */
+export async function shareBackup() {
+  const prev = getState().meta.lastBackupAt ?? null;
+  const file = backupFile();
+  try {
+    await navigator.share({ files: [file], title: file.name });
+    return true;
+  } catch {
+    updateMeta({ lastBackupAt: prev ?? undefined });
+    return false;
+  }
+}
+
+const DAY_MS = 86400000;
+
+/** Days that hold any logged data. */
+function dataDayCount() {
+  return Object.values(getState().days).filter((d) => d && (d.steps || d.rest || d.sleep || d.climbs?.length || d.rides?.length
+    || d.food?.length || d.water?.length || Object.keys(d.exercises || {}).length)).length;
+}
+
+/**
+ * Backup reminder state: { show, days } — days since the last backup (null = never).
+ * Shown when the last backup is 7+ days old, or never backed up with 3+ days of data; "אחר כך" snoozes for 24 h.
+ */
+export function backupReminder(now = Date.now()) {
+  const meta = getState().meta;
+  const last = meta.lastBackupAt ? Date.parse(meta.lastBackupAt) : NaN;
+  const days = Number.isFinite(last) ? Math.max(0, Math.floor((now - last) / DAY_MS)) : null;
+  const snoozed = meta.backupSnoozeUntil && Date.parse(meta.backupSnoozeUntil) > now;
+  const due = days === null ? dataDayCount() >= 3 : days >= 7;
+  return { show: due && !snoozed, days };
+}
+
+export function snoozeBackupReminder() {
+  updateMeta({ backupSnoozeUntil: new Date(Date.now() + DAY_MS).toISOString() });
+}
+
+/** "DD.MM.YYYY" of the last backup, or null. */
+export function lastBackupDate() {
+  const t = getState().meta.lastBackupAt;
+  const d = t ? new Date(t) : null;
+  if (!d || Number.isNaN(d.getTime())) return null;
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
 
 /** Read and validate a backup file. Resolves { data } or { error }. */

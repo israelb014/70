@@ -4,7 +4,7 @@ import { icon, esc, num, toast, confirmDialog, invalid } from '../ui.js';
 import { productSheet } from '../foodSheets.js';
 import { SETTINGS_FIELDS, fieldHTML, validateField } from './wizard.js';
 import { exerciseEditorHTML, handleExerciseAction } from '../exerciseEditor.js';
-import { exportBackup, readBackupFile, restoreBackup } from '../export.js';
+import { exportBackup, readBackupFile, restoreBackup, canShareBackup, shareBackup, lastBackupDate } from '../export.js';
 import { APP_VERSION } from '../config.js';
 
 const GROUPS = [
@@ -31,8 +31,10 @@ export function render(root, ctx) {
     <section class="card">
       <div class="card-head">${icon('download', 'head-ic')}<h2>גיבוי</h2></div>
       <p class="muted small">הנתונים נשמרים רק במכשיר הזה. מומלץ לייצא גיבוי מדי פעם.</p>
+      <p class="backup-last" data-backup-last>${lastBackupDate() ? `גיבוי אחרון: <bdi class="num">${lastBackupDate()}</bdi>` : 'עוד לא בוצע גיבוי'}</p>
       <div class="btn-col">
         <button type="button" class="btn secondary block press" data-action="export">${icon('download')}<span>ייצוא גיבוי</span></button>
+        ${canShareBackup() ? `<button type="button" class="btn secondary block press" data-action="share-backup">${icon('share')}<span>שיתוף הקובץ</span></button>` : ''}
         <button type="button" class="btn secondary block press" data-action="import">${icon('upload')}<span>שחזור מגיבוי</span></button>
       </div>
       <input type="file" accept="application/json,.json" data-file hidden>
@@ -137,6 +139,12 @@ async function onClick(e, ctx, root) {
     case 'export':
       exportBackup();
       toast('קובץ הגיבוי נוצר');
+      return ctx.rerender();
+    case 'share-backup':
+      if (await shareBackup()) {
+        toast('הגיבוי שותף');
+        ctx.rerender();
+      }
       return;
     case 'import':
       root.querySelector('[data-file]').click();
