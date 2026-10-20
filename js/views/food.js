@@ -8,8 +8,8 @@ import { foodTotals, sortedFood } from '../stats.js';
 import { nowTime } from '../dates.js';
 import { dailySummary, copyText } from '../export.js';
 import { unitAmount } from '../hebrew.js';
-import { loadFoodDb, searchFoods } from '../foods.js';
-import { openAmountSheet, scanFlow } from '../foodSheets.js';
+import { loadFoodDb, searchFoods, searchOff, saveOffFood } from '../foods.js';
+import { openAmountSheet, scanFlow, addCustomFlow } from '../foodSheets.js';
 
 // Latest search results by key, so a tap can find the food object.
 let resultMap = new Map();
@@ -109,10 +109,31 @@ function amountText(f) {
 /* ---------- Search ---------- */
 
 let searchSeq = 0;
+let offTimer = 0;
+let offCtrl = null;
+
+const resultRow = (f) => `<li><button type="button" class="food-result press" data-action="food-pick" data-key="${esc(f.key)}">
+    <span class="grow"><strong>${esc(f.name)}</strong>
+      ${f.brand ? `<span class="muted xs">${esc(f.brand)}</span>` : ''}
+      <span class="muted small">${num(f.kcal100)} קק״ל · <span class="protein-txt">${num(f.protein100)} ג׳ חלבון</span> · ל-100 ג׳</span></span>
+    ${f.source === 'custom' ? `<span class="badge">${icon(f.barcode ? 'barcode' : 'box')}<span>שלי</span></span>` : ''}
+    ${icon('plus', 'add-ic')}
+  </button></li>`;
+
+const section = (title, items, extra = '') =>
+  `<div class="res-section"><div class="res-title">${title}${extra}</div><ul class="list">${items.map(resultRow).join('')}</ul></div>`;
+
+/**
+ * Unified search: "המוצרים שלי" → "מהמאגר" → "מוצרים מהרשת" (Open Food Facts, after 400 ms idle,
+ * 2+ chars, online only) → permanent "לא מצאת? הוסף מאכל" row.
+ */
 async function updateResults(root, query) {
   const box = root.querySelector('[data-results]');
   if (!box) return;
   const seq = ++searchSeq;
+  clearTimeout(offTimer);
+  offCtrl?.abort();
+  offCtrl = null;
   if (!query.trim()) {
     box.hidden = true;
     box.innerHTML = '';
@@ -128,20 +149,40 @@ async function updateResults(root, query) {
     db = []; // DB unavailable (first load offline) — own products still searchable
   }
   if (seq !== searchSeq) return; // a newer keystroke won
-  const results = searchFoods(db, query);
-  resultMap = new Map(results.map((f) => [f.key, f]));
-  box.innerHTML = results.length
-    ? `<ul class="list">${results
-        .map(
-          (f) => `<li><button type="button" class="food-result press" data-action="food-pick" data-key="${esc(f.key)}">
-            <span class="grow"><strong>${esc(f.name)}</strong>
-              <span class="muted small">${num(f.kcal100)} קק״ל · <span class="protein-txt">${num(f.protein100)} ג׳ חלבון</span> · ל-100 ג׳</span></span>
-            ${f.source === 'custom' ? `<span class="badge">${icon(f.barcode ? 'barcode' : 'box')}<span>שלי</span></span>` : ''}
-            ${icon('plus', 'add-ic')}
-          </button></li>`
-        )
-        .join('')}</ul>`
-    : `<p class="muted small">לא נמצאו תוצאות${db.length ? '' : ' (מאגר המזון ייטען כשיהיה חיבור)'}. אפשר להזין ידנית למטה.</p>`;
+  const { own, db: hits } = searchFoods(db, query);
+  resultMap = new Map([...own, ...hits].map((f) => [f.key, f]));
+  const online = navigator.onLine !== false && query.trim().length >= 2;
+  box.innerHTML = `
+    ${own.length ? section('המוצרים שלי', own) : ''}
+    ${hits.length ? section('מהמאגר', hits) : ''}
+    ${!own.length && !hits.length ? `<p class="muted small">לא נמצא במאגר${db.length ? '' : ' (המאגר ייטען כשיהיה חיבור)'}.</p>` : ''}
+    <div data-off-section ${online ? '' : 'hidden'}>
+      <div class="res-section"><div class="res-title">מוצרים מהרשת <span class="spinner" aria-label="טוען"></span></div></div>
+    </div>
+    <button type="button" class="food-result add-row press" data-action="food-new">
+      ${icon('plus', 'add-ic')}<span class="grow"><strong>לא מצאת? הוסף מאכל</strong>
+      <span class="muted small">יישמר ב"המוצרים שלי"</span></span>
+    </button>`;
+  box.querySelector('[data-action=food-new]').dataset.query = query.trim();
+  if (online) offTimer = setTimeout(() => runOffSearch(box, query.trim(), seq), 400);
+}
+
+async function runOffSearch(box, query, seq) {
+  const el = box.querySelector('[data-off-section]');
+  if (!el) return;
+  offCtrl = new AbortController();
+  try {
+    const list = await searchOff(query, offCtrl.signal);
+    if (seq !== searchSeq) return;
+    if (!list.length) {
+      el.hidden = true;
+      return;
+    }
+    list.forEach((f) => resultMap.set(f.key, f));
+    el.innerHTML = section('מוצרים מהרשת', list, ' <span class="muted xs">Open Food Facts</span>');
+  } catch {
+    if (seq === searchSeq) el.hidden = true; // offline / error / aborted: hide silently
+  }
 }
 
 async function onClick(e, ctx) {
@@ -153,10 +194,19 @@ async function onClick(e, ctx) {
 
   switch (a) {
     case 'food-pick': {
-      const food = resultMap.get(b.dataset.key);
-      if (food && (await openAmountSheet(k, food))) ctx.rerender();
+      let food = resultMap.get(b.dataset.key);
+      if (!food) return;
+      let source = food.source;
+      if (food.source === 'off') {
+        food = saveOffFood(food); // selected web results join "המוצרים שלי"
+        source = 'barcode';
+      }
+      if (await openAmountSheet(k, food, { source })) ctx.rerender();
       return;
     }
+    case 'food-new':
+      if (await addCustomFlow(k, { name: b.dataset.query || '' })) ctx.rerender();
+      return;
     case 'scan':
       if (await scanFlow(k)) ctx.rerender();
       return;

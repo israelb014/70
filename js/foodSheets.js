@@ -192,18 +192,21 @@ export async function scanFlow(dayKey) {
   const r = await lookupBarcode(code);
   if (r.food) return openAmountSheet(dayKey, r.food, { editableName: true, source: 'barcode' });
 
-  const res = await productSheet({
-    title: 'מוצר חדש',
-    product: r.partial,
-    message: LOOKUP_MESSAGES[r.reason],
-    withAmount: true,
-  });
+  return addCustomFlow(dayKey, r.partial, LOOKUP_MESSAGES[r.reason]);
+}
+
+/**
+ * New own product form (optionally prefilled) → saved to "המוצרים שלי" and added to the day.
+ * Used after a failed barcode lookup and by the search's "לא מצאת? הוסף מאכל" row.
+ */
+export async function addCustomFlow(dayKey, partial = {}, message = '') {
+  const res = await productSheet({ title: 'מוצר חדש', product: partial, message, withAmount: true });
   if (!res) return false;
   const saved = upsertCustomFood(res.product);
   const food = fromCustom(saved);
   const { kcal, protein } = calcFood(food, res.amount);
   updateDay(dayKey, (d) =>
-    d.food.push({ name: saved.name, grams: res.amount, kcal, protein, source: 'barcode', time: nowTime(), amount: res.amount, unit: 'גרם' })
+    d.food.push({ name: saved.name, grams: res.amount, kcal, protein, source: partial.barcode ? 'barcode' : 'custom', time: nowTime(), amount: res.amount, unit: 'גרם' })
   );
   rememberFood(food.key, res.amount, 'גרם');
   vibrate(20);

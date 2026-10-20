@@ -42,11 +42,30 @@ export function render(root, ctx) {
       <button type="button" class="btn danger block press" data-action="wipe">${icon('trash')}<span>מחיקת כל הנתונים</span></button>
     </section>
     <p class="version">70 · גרסה <bdi class="num">${APP_VERSION}</bdi><br>
-      מאגר המזון: רשימה מובנית של מזונות נפוצים בישראל, ערכים לפי USDA FoodData Central ·
-      ברקודים: Open Food Facts</p>`;
+      <span data-db-about>מאגר המזון: מזונות נפוצים בישראל (תוויות מוצרים, USDA, צמרת) · ברקודים: Open Food Facts</span></p>`;
+  fillDbAbout(root);
 
   root.onclick = (e) => onClick(e, ctx, root);
   root.onchange = (e) => onChange(e, ctx);
+}
+
+/** Fill the about line with item counts per source and the database build date. */
+async function fillDbAbout(root) {
+  try {
+    const meta = await (await fetch('./data/foods-meta.json')).json();
+    const el = root.querySelector('[data-db-about]');
+    if (!el || !meta?.counts) return;
+    const c = meta.counts;
+    const parts = [
+      c.label ? `${num(c.label)} מתוויות מוצרים` : '',
+      c.curated ? `${num(c.curated)} מרשימה מובנית (USDA)` : '',
+      c.tzameret ? `${num(c.tzameret)} מצמרת (משרד הבריאות)` : '',
+    ].filter(Boolean);
+    const built = meta.builtAt ? new Date(meta.builtAt).toLocaleDateString('he-IL') : '';
+    el.innerHTML = `מאגר המזון: ${num(meta.total)} פריטים · ${parts.join(' · ')}${built ? ` · נבנה ${num(built)}` : ''}<br>ברקודים וחיפוש ברשת: Open Food Facts`;
+  } catch {
+    /* offline before first load — keep the static line */
+  }
 }
 
 function productsCard() {

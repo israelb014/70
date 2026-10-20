@@ -1,5 +1,5 @@
 // Service worker: cache-first for app files and the Heebo font. Versioned cache; old caches removed.
-const CACHE_VERSION = '1.3.0';
+const CACHE_VERSION = '1.4.0';
 const CACHE = `seventy-${CACHE_VERSION}`;
 
 const APP_FILES = [
@@ -37,8 +37,12 @@ const APP_FILES = [
   './icons/icon-maskable-512.png',
 ];
 
-// data/foods.json is not precached: it loads lazily on first search and is then
-// cached by the fetch handler below, so it works offline afterwards.
+// The food database (data/foods.json + data/foods-meta.json) is not precached: it loads lazily
+// on first search and is served stale-while-revalidate, so a rebuilt database reaches the phone
+// on the next search without a new app version, and still works offline.
+const SWR_PATHS = ['/data/foods.json', '/data/foods-meta.json'];
+// Its own cache, so the app-version cleanup doesn't throw away a downloaded database.
+const DATA_CACHE = 'seventy-data';
 
 const FONT_CSS = 'https://fonts.googleapis.com/css2?family=Heebo:wght@400;700;900&display=swap';
 const FONT_HOSTS = ['fonts.googleapis.com', 'fonts.gstatic.com'];
@@ -78,7 +82,9 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       const keys = await caches.keys();
-      await Promise.all(keys.filter((k) => k.startsWith('seventy-') && k !== CACHE).map((k) => caches.delete(k)));
+      await Promise.all(
+        keys.filter((k) => k.startsWith('seventy-') && k !== CACHE && k !== DATA_CACHE).map((k) => caches.delete(k))
+      );
       await self.clients.claim();
     })()
   );
@@ -90,6 +96,11 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   const sameOrigin = url.origin === self.location.origin;
   if (!sameOrigin && !FONT_HOSTS.includes(url.hostname)) return;
+
+  if (sameOrigin && SWR_PATHS.some((p) => url.pathname.endsWith(p))) {
+    event.respondWith(staleWhileRevalidate(event, req));
+    return;
+  }
 
   event.respondWith(
     (async () => {
@@ -115,3 +126,21 @@ self.addEventListener('fetch', (event) => {
     })()
   );
 });
+
+/** Serve the cached copy immediately (if any) and refresh it from the network in the background. */
+async function staleWhileRevalidate(event, req) {
+  const cache = await caches.open(DATA_CACHE);
+  const cached = await cache.match(req, { ignoreSearch: true });
+  const network = fetch(req)
+    .then((res) => {
+      if (res && res.ok) cache.put(req, res.clone());
+      return res;
+    })
+    .catch(() => null);
+  if (cached) {
+    event.waitUntil(network);
+    return cached;
+  }
+  const res = await network;
+  return res || new Response('[]', { status: 503, headers: { 'Content-Type': 'application/json' } });
+}

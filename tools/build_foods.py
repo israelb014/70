@@ -1,28 +1,39 @@
 #!/usr/bin/env python3
 """
-Build data/foods.json for the "70" app.
+Build data/foods.json (+ data/foods-meta.json) for the "70" app.
 
-Output format (compact JSON):
-  [{ "n": name, "k": kcal per 100 g, "p": protein g per 100 g, "u": [{ "l": unit label, "g": grams }] }]
+Output (compact JSON, values per 100 g):
+  [{ "n": name, "k": kcal, "p": protein g, "u": [{ "l": unit, "g": grams }], "a": [aliases], "s": source }]
+  source: "label" (Israeli package labels) | "curated" (USDA-based list) | "tzameret" (Ministry of Health)
 
-Sources, in priority order:
-  a) Tzameret (Israeli Ministry of Health food composition DB, data.gov.il) — pass the
-     downloaded CSV files:  python3 tools/build_foods.py --tzameret foods.csv [--units units.csv]
-     Expected columns: shmmitzrach (Hebrew name), food_energy (kcal/100g), protein (g/100g);
-     units file: mmitzrach (food code), shmmida/mida (label), mishkal (grams). Column matching
-     is best-effort since the published schema may change.
-  b) Fallback (default, used for the committed file): the curated list below — common foods
-     eaten in Israel, values per 100 g based on standard USDA FoodData Central figures,
-     with typical unit weights.
+Usage (from the repository root):
+  python3 tools/build_foods.py              # curated + label lists only (offline)
+  python3 tools/build_foods.py --tzameret   # also download "צמרת" from data.gov.il and merge
+                                            # (used by .github/workflows/update-foods.yml)
 
-Run from the repository root:  python3 tools/build_foods.py
+With --tzameret the script finds the dataset via the CKAN API, prints every table's column
+headers, auto-detects the name / energy / protein columns (and a portion-weights table if
+present), and merges. If anything essential is missing it exits with an error and does NOT
+overwrite the existing files.
 """
 import csv
+import io
 import json
+import re
 import sys
+import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
-# name | kcal/100g | protein/100g | units "label:grams,label:grams"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from food_data import LABEL, EXTRA, EXTRA2, EXTRA3, EXTRA4, EXTRA5  # noqa: E402
+
+ROOT = Path(__file__).resolve().parent.parent
+OUT = ROOT / 'data' / 'foods.json'
+META = ROOT / 'data' / 'foods-meta.json'
+
+# Base curated list (generic foods). Line format: name | kcal | protein | units | aliases
 CURATED = """
 # --- עוף והודו ---
 חזה עוף צלוי|165|31|חזה שלם:170
@@ -523,11 +534,13 @@ CURATED = """
 """
 
 
+# ---------------------------------------------------------------- parsing helpers
+
 def parse_units(spec):
     units = []
-    for part in filter(None, (s.strip() for s in spec.split(','))):
+    for part in filter(None, (s.strip() for s in (spec or '').split(','))):
         label, grams = part.rsplit(':', 1)
-        units.append({'l': label.strip(), 'g': float(grams)})
+        units.append({'l': label.strip(), 'g': num(grams)})
     return units
 
 
@@ -537,74 +550,252 @@ def num(v):
     return int(v) if v == int(v) else v
 
 
-def from_curated():
+def parse_block(text, source):
     foods = []
-    for line in CURATED.strip().splitlines():
+    for line in text.strip().splitlines():
         line = line.strip()
         if not line or line.startswith('#'):
             continue
-        name, kcal, protein, units = (line.split('|') + [''])[:4]
-        foods.append({'n': name.strip(), 'k': num(kcal), 'p': num(protein), 'u': parse_units(units)})
+        parts = (line.split('|') + ['', ''])[:5]
+        name, kcal, protein, units, aliases = (p.strip() for p in parts)
+        f = {'n': name, 'k': num(kcal), 'p': num(protein), 'u': parse_units(units), 's': source}
+        al = [a.strip() for a in aliases.split(',') if a.strip() and a.strip() != name]
+        if al:
+            f['a'] = al
+        foods.append(f)
     return foods
 
 
-def pick(row, *names):
-    for n in names:
-        for k in row:
-            if k and k.strip().lower() == n:
-                return row[k]
+FINALS = str.maketrans({'ך': 'כ', 'ם': 'מ', 'ן': 'נ', 'ף': 'פ', 'ץ': 'צ'})
+
+
+def normalize(s):
+    """Mirror of normalizeHe() in js/foods.js."""
+    s = re.sub(r'[\u0591-\u05C7]', '', str(s or '').lower()).translate(FINALS)
+    s = re.sub(r'["\'`׳״\u2018\u2019\u201C\u201D]', '', s)
+    s = re.sub(r'[-–_,.()/]', ' ', s)
+    s = s.replace('וו', 'ו').replace('יי', 'י')
+    return re.sub(r'\s+', ' ', s).strip()
+
+
+def dedupe(foods):
+    seen, out = set(), []
+    for f in foods:
+        key = normalize(f['n'])
+        if key in seen:
+            continue
+        assert 0 <= f['k'] <= 900 and 0 <= f['p'] <= 100, f
+        seen.add(key)
+        out.append(f)
+    return out
+
+
+def local_foods():
+    # Label entries first: a branded label entry wins over a curated one with the same name.
+    return dedupe(parse_block(LABEL, 'label') + parse_block(CURATED, 'curated') + parse_block(EXTRA, 'curated')
+                  + parse_block(EXTRA2, 'curated') + parse_block(EXTRA3, 'curated') + parse_block(EXTRA4, 'curated') + parse_block(EXTRA5, 'curated'))
+
+
+# ---------------------------------------------------------------- Tzameret (data.gov.il)
+
+CKAN = 'https://data.gov.il/api/3/action/package_search?rows=50&q='
+QUERIES = ['צמרת', 'nutrition', 'מזון']
+
+
+def fail(msg, found=None):
+    print('\n::error::' + msg)
+    if found:
+        print('What was found:')
+        for line in found:
+            print('  - ' + line)
+    print('foods.json was NOT changed.')
+    sys.exit(1)
+
+
+def http_get(url, timeout=120):
+    req = urllib.request.Request(url, headers={'User-Agent': 'seventy-food-builder/1.0'})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return r.read()
+
+
+def find_resources():
+    found_log, resources = [], []
+    for q in QUERIES:
+        try:
+            data = json.loads(http_get(CKAN + urllib.parse.quote(q)))
+        except Exception as e:  # noqa: BLE001
+            found_log.append(f'query "{q}": request failed ({e})')
+            continue
+        results = data.get('result', {}).get('results', [])
+        found_log.append(f'query "{q}": {len(results)} datasets')
+        for pkg in results:
+            text = ' '.join(str(pkg.get(k, '')) for k in ('title', 'name', 'notes')).lower()
+            relevant = any(w in text for w in ('צמרת', 'tzameret', 'מרכיבי מזון', 'הרכב מזון', 'nutrient', 'nutrition'))
+            fmts = [str(r.get('format', '')).upper() for r in pkg.get('resources', [])]
+            found_log.append(f'  {"*" if relevant else " "} {pkg.get("title")} [{pkg.get("name")}] formats={fmts}')
+            if not relevant:
+                continue
+            for r in pkg.get('resources', []):
+                fmt = str(r.get('format', '')).upper()
+                url = r.get('url', '')
+                if fmt in ('CSV', 'XLSX', 'XLS') or url.lower().endswith(('.csv', '.xlsx', '.xls')):
+                    resources.append({'pkg': pkg.get('title'), 'name': r.get('name'), 'fmt': fmt, 'url': url})
+        if resources:
+            break
+    return resources, found_log
+
+
+def read_table(raw, fmt, url):
+    """Return list of tables; each table = (headers, rows as dicts)."""
+    tables = []
+    if fmt in ('XLSX', 'XLS') or url.lower().endswith(('.xlsx', '.xls')):
+        import openpyxl  # installed by the workflow
+        wb = openpyxl.load_workbook(io.BytesIO(raw), read_only=True, data_only=True)
+        for ws in wb.worksheets:
+            rows = list(ws.iter_rows(values_only=True))
+            if not rows:
+                continue
+            headers = [str(h).strip() if h is not None else '' for h in rows[0]]
+            tables.append((headers, [dict(zip(headers, r)) for r in rows[1:]]))
+    else:
+        for enc in ('utf-8-sig', 'cp1255', 'latin-1'):
+            try:
+                text = raw.decode(enc)
+                break
+            except UnicodeDecodeError:
+                continue
+        reader = csv.DictReader(io.StringIO(text))
+        headers = [h.strip() for h in (reader.fieldnames or [])]
+        tables.append((headers, [{(k or '').strip(): v for k, v in row.items()} for row in reader]))
+    return tables
+
+
+def pick_col(headers, candidates, avoid=()):
+    low = {h: h.lower() for h in headers}
+    for cand in candidates:
+        for h, l in low.items():
+            if l == cand:
+                return h
+    for cand in candidates:
+        for h, l in low.items():
+            if cand in l and not any(a in l for a in avoid):
+                return h
     return None
 
 
-def from_tzameret(foods_csv, units_csv=None):
+def to_float(v):
+    try:
+        return float(str(v).replace(',', '.').strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def tzameret_foods():
+    resources, found_log = find_resources()
+    if not resources:
+        fail('Could not find the Tzameret dataset (CSV/XLSX) on data.gov.il.', found_log)
+    print('Resources:')
+    for r in resources:
+        print(f'  {r["pkg"]} / {r["name"]} ({r["fmt"]}) {r["url"]}')
+
+    main, units_tables, seen_headers = None, [], []
+    for r in resources:
+        try:
+            raw = http_get(r['url'], timeout=300)
+            tables = read_table(raw, r['fmt'], r['url'])
+        except Exception as e:  # noqa: BLE001
+            seen_headers.append(f'{r["name"]}: download/parse failed ({e})')
+            continue
+        for headers, rows in tables:
+            print(f'\nTable "{r["name"]}" — {len(rows)} rows. Columns:')
+            print('  ' + ' | '.join(headers))
+            seen_headers.append(f'{r["name"]} ({len(rows)} rows): {", ".join(headers)}')
+            name_c = pick_col(headers, ['shmmitzrach', 'hebrew_name', 'שם מצרך', 'שם המצרך', 'שם', 'name'], avoid=('english', 'אנגלית', 'mida', 'מידה'))
+            energy_c = pick_col(headers, ['food_energy', 'energy_kcal', 'energy', 'אנרגיה', 'קלוריות', 'kcal'])
+            protein_c = pick_col(headers, ['protein', 'חלבון', 'חלבונים'])
+            weight_c = pick_col(headers, ['mishkal', 'weight', 'משקל', 'grams', 'גרם'])
+            unit_c = pick_col(headers, ['shmmida', 'mida', 'unit_name', 'מידה', 'יחידה', 'portion'])
+            code_c = pick_col(headers, ['smlmitzrach', 'mmitzrach', 'code', 'קוד מצרך', 'קוד'])
+            if name_c and energy_c and protein_c and (main is None or len(rows) > len(main[1])):
+                main = (headers, rows, name_c, energy_c, protein_c, code_c)
+            elif unit_c and weight_c and code_c:
+                units_tables.append((rows, code_c, unit_c, weight_c))
+
+    if not main:
+        fail('Found tables, but none with Hebrew name + energy + protein columns.', seen_headers)
+    headers, rows, name_c, energy_c, protein_c, code_c = main
+    kj = 'kj' in energy_c.lower() or "ג'ול" in energy_c or 'ג׳ול' in energy_c
+    print(f'\nUsing columns: name="{name_c}" energy="{energy_c}"{" (kJ → kcal)" if kj else ""} protein="{protein_c}" code="{code_c}"')
+
     units_by_code = {}
-    if units_csv:
-        with open(units_csv, encoding='utf-8-sig', newline='') as f:
-            for r in csv.DictReader(f):
-                code = pick(r, 'mmitzrach', 'code', 'smlmitzrach')
-                label = pick(r, 'shmmida', 'mida', 'unit_name')
-                grams = pick(r, 'mishkal', 'weight', 'grams')
-                try:
-                    units_by_code.setdefault(code, []).append({'l': label.strip(), 'g': float(grams)})
-                except (TypeError, ValueError, AttributeError):
-                    pass
+    for urows, ucode, ulabel, uweight in units_tables:
+        print(f'Units table: code="{ucode}" label="{ulabel}" grams="{uweight}" ({len(urows)} rows)')
+        for row in urows:
+            g = to_float(row.get(uweight))
+            label = str(row.get(ulabel) or '').strip()
+            if g and g > 0 and label:
+                units_by_code.setdefault(str(row.get(ucode)).strip(), []).append({'l': label, 'g': num(g)})
+
     foods = []
-    with open(foods_csv, encoding='utf-8-sig', newline='') as f:
-        for r in csv.DictReader(f):
-            name = pick(r, 'shmmitzrach', 'hebrew_name', 'name')
-            try:
-                kcal = float(pick(r, 'food_energy', 'energy', 'kcal'))
-                protein = float(pick(r, 'protein') or 0)
-            except (TypeError, ValueError):
-                continue
-            if not name:
-                continue
-            code = pick(r, 'code', 'smlmitzrach', 'mmitzrach')
-            foods.append({'n': name.strip(), 'k': num(kcal), 'p': num(protein), 'u': units_by_code.get(code, [])})
+    for row in rows:
+        name = str(row.get(name_c) or '').strip()
+        kcal, protein = to_float(row.get(energy_c)), to_float(row.get(protein_c))
+        if not name or kcal is None or protein is None:
+            continue
+        if kj:
+            kcal /= 4.184
+        if not (0 <= kcal <= 900 and 0 <= protein <= 100):
+            continue
+        code = str(row.get(code_c)).strip() if code_c else None
+        foods.append({'n': name, 'k': num(kcal), 'p': num(protein), 'u': units_by_code.get(code, [])[:8], 's': 'tzameret'})
+    if len(foods) < 300:
+        fail(f'Only {len(foods)} usable Tzameret rows were parsed (expected hundreds).', seen_headers)
+    print(f'Parsed {len(foods)} Tzameret foods.')
     return foods
 
 
+def merge(local, tz):
+    """Label entries always win; Tzameret replaces curated generic entries with the same normalized name."""
+    by_key = {normalize(f['n']): f for f in tz}
+    out, used = [], set()
+    for f in local:
+        key = normalize(f['n'])
+        t = by_key.get(key)
+        if f['s'] == 'curated' and t:
+            merged = dict(t)
+            merged['u'] = t['u'] or f['u']
+            if f.get('a'):
+                merged['a'] = f['a']
+            out.append(merged)
+            used.add(key)
+        else:
+            out.append(f)
+            used.add(key)
+    for key, t in by_key.items():
+        if key not in used:
+            out.append(t)
+            used.add(key)
+    return out
+
+
+# ---------------------------------------------------------------- main
+
 def main():
-    args = sys.argv[1:]
-    if '--tzameret' in args:
-        units = args[args.index('--units') + 1] if '--units' in args else None
-        foods = from_tzameret(args[args.index('--tzameret') + 1], units)
-    else:
-        foods = from_curated()
-
-    # De-duplicate by name (first wins) and validate.
-    seen, out = set(), []
+    foods = local_foods()
+    if '--tzameret' in sys.argv[1:]:
+        foods = dedupe(merge(foods, tzameret_foods()))
+    counts = {}
     for f in foods:
-        if f['n'] in seen:
-            print(f"duplicate skipped: {f['n']}", file=sys.stderr)
-            continue
-        assert 0 <= f['k'] <= 900 and 0 <= f['p'] <= 100, f
-        seen.add(f['n'])
-        out.append(f)
-
-    dest = Path(__file__).resolve().parent.parent / 'data' / 'foods.json'
-    dest.write_text(json.dumps(out, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
-    print(f'wrote {len(out)} foods -> {dest} ({dest.stat().st_size // 1024} KB)')
+        counts[f['s']] = counts.get(f['s'], 0) + 1
+    OUT.write_text(json.dumps(foods, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+    now = datetime.now(timezone.utc)
+    META.write_text(json.dumps({
+        'version': now.strftime('%Y%m%d%H%M'),
+        'builtAt': now.isoformat(timespec='seconds'),
+        'total': len(foods),
+        'counts': counts,
+    }, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+    print(f'wrote {len(foods)} foods -> {OUT.relative_to(ROOT)} ({OUT.stat().st_size // 1024} KB) counts={counts}')
 
 
 if __name__ == '__main__':
