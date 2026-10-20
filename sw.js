@@ -1,5 +1,5 @@
 // Service worker: cache-first for app files and the Heebo font. Versioned cache; old caches removed.
-const CACHE_VERSION = '1.5.1';
+const CACHE_VERSION = '1.5.2';
 const CACHE = `seventy-${CACHE_VERSION}`;
 
 const APP_FILES = [
@@ -23,6 +23,7 @@ const APP_FILES = [
   './js/progress.js',
   './js/hebrew.js',
   './js/insights.js',
+  './js/timepicker.js',
   './js/heatmap.js',
   './js/badgeArt.js',
   './js/celebrate.js',

@@ -13,7 +13,7 @@ export function render(root, ctx) {
   root.innerHTML = `
     <header class="page-head with-back">
       <button type="button" class="icon-btn press" data-action="back" aria-label="חזרה">${icon('chevR')}</button>
-      <div><span class="eyebrow">70</span><h1>הישגים</h1></div>
+      <div><h1>הישגים</h1></div>
     </header>
     <section class="card level-card">
       ${ring({

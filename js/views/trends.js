@@ -16,7 +16,7 @@ export function render(root, ctx) {
   const keys = lastNDays(7);
 
   root.innerHTML = `
-    <header class="page-head"><span class="eyebrow">70</span><h1>מגמות</h1></header>
+    <header class="page-head"><h1>מגמות</h1></header>
     ${insightsSection()}
     ${heatmapCard()}
     ${achievementsCard()}

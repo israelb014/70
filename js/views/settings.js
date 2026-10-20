@@ -16,7 +16,7 @@ const GROUPS = [
 export function render(root, ctx) {
   const st = getState().settings;
   root.innerHTML = `
-    <header class="page-head"><span class="eyebrow">70</span><h1>הגדרות</h1></header>
+    <header class="page-head"><h1>הגדרות</h1></header>
     ${GROUPS.map(
       (g) => `<section class="card">
         <div class="card-head">${icon(g.icon, 'head-ic')}<h2>${g.title}</h2></div>

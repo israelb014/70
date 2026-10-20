@@ -8,6 +8,7 @@ import { foodTotals, sortedFood } from '../stats.js';
 import { nowTime } from '../dates.js';
 import { dailySummary, copyText } from '../export.js';
 import { unitAmount } from '../hebrew.js';
+import { openTimePicker } from '../timepicker.js';
 import { loadFoodDb, searchFoods, searchOff, saveOffFood } from '../foods.js';
 import { openAmountSheet, scanFlow, addCustomFlow } from '../foodSheets.js';
 
@@ -240,22 +241,7 @@ async function onClick(e, ctx) {
       const i = Number(b.dataset.i);
       const item = getDay(k).food[i];
       if (!item) return;
-      const res = await openSheet({
-        title: 'שעת הארוחה',
-        body: `<p class="muted">${esc(item.name)}</p>
-          <label class="field"><span>שעה</span><input type="time" name="time" value="${item.time || nowTime()}"></label>`,
-        actions: [
-          { label: 'ביטול', value: null, kind: 'ghost' },
-          {
-            label: 'שמירה',
-            kind: 'primary',
-            onClick: (root) => {
-              const v = root.querySelector('[name=time]').value;
-              return /^\d{2}:\d{2}$/.test(v) ? v : invalid(root.querySelector('[name=time]'), 'שעה לא תקינה');
-            },
-          },
-        ],
-      });
+      const res = await openTimePicker({ value: item.time || nowTime(), step: 1, title: `שעת הארוחה · ${item.name}` });
       if (res) {
         updateDay(k, (d) => (d.food[i].time = res));
         ctx.rerender();

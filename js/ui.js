@@ -382,7 +382,7 @@ export function dateNav(k, title, eyebrowHTML = '') {
   return `<header class="date-nav">
     <button type="button" class="icon-btn press" data-action="date-prev" aria-label="היום הקודם">${icon('chevR')}</button>
     <div class="date-nav-label">
-      ${eyebrowHTML || `<span class="eyebrow">${esc(title)}</span>`}
+      ${eyebrowHTML || (title ? `<span class="eyebrow">${esc(title)}</span>` : '')}
       <h1>${esc(rel || longLabel(k))}</h1>
       ${rel ? `<span class="muted small">${esc(longLabel(k))}</span>` : '<button type="button" class="link-btn" data-action="date-today">חזרה להיום</button>'}
     </div>

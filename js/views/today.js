@@ -10,12 +10,12 @@ import {
   longestRideKm, floorsOf,
 } from '../stats.js';
 import { runTimer } from '../timer.js';
-import { targetText } from '../exerciseEditor.js';
 import { levelInfo, sleepMinutes, fmtDuration, lastSleep } from '../progress.js';
 import { waterMl } from '../stats.js';
 import { nowTime } from '../dates.js';
 import { dailySummary, copyText } from '../export.js';
-import { plural, int } from '../hebrew.js';
+import { plural, int, trim } from '../hebrew.js';
+import { openTimePicker, timeField } from '../timepicker.js';
 import { dayInsights } from '../insights.js';
 import { foodTotals, completionPct } from '../stats.js';
 import { todayKey } from '../dates.js';
@@ -23,11 +23,8 @@ import { todayKey } from '../dates.js';
 // Unicode isolate for numbers inside plain-text (non-HTML) RTL strings.
 const iso = (s) => `⁦${s}⁩`;
 
-let ctxDate = null;
-
 export function render(root, ctx) {
   const k = ctx.date;
-  ctxDate = k;
   const st = getState().settings;
   const day = getDay(k);
   const rec = recordIdsOn(k, computeRecords().events);
@@ -36,7 +33,7 @@ export function render(root, ctx) {
   celebrateNewRecords(ctx, k, rec);
 
   root.innerHTML = `
-    ${dateNav(k, '70')}
+    ${dateNav(k, '')}
     ${heroCard(k, day, st)}
     ${insightCard(k)}
     ${stepsCard(day, st, badge)}
@@ -49,6 +46,11 @@ export function render(root, ctx) {
       ${icon('moon')}<span>${day.rest ? 'יום מנוחה · לביטול' : 'יום מנוחה'}</span>
     </button>
     <button type="button" class="btn secondary block press" data-action="copy-daily">${icon('copy')}<span>העתק סיכום יומי</span></button>`;
+  // A row that just completed plays its check animation, then collapses after 600 ms.
+  if (ctx.openEx && ctx.justCompleted.has(ctx.openEx)) {
+    const id = ctx.openEx;
+    setTimeout(() => { if (ctx.openEx === id) toggleRow(root, ctx, id, true); }, 600);
+  }
   ctx.justCompleted.clear();
 
   root.onclick = (e) => onClick(e, ctx);
@@ -133,8 +135,8 @@ function sleepCard(day, st) {
       </div>
     </div>
     <div class="field-grid">
-      <label class="field"><span>הלכתי לישון</span><input type="time" data-sleep="bed" value="${pre.bed}"></label>
-      <label class="field"><span>קמתי</span><input type="time" data-sleep="wake" value="${pre.wake}"></label>
+      ${timeField({ value: pre.bed, action: 'pick-sleep', attrs: `data-sleep="bed" data-value="${pre.bed}"`, label: 'הלכתי לישון' })}
+      ${timeField({ value: pre.wake, action: 'pick-sleep', attrs: `data-sleep="wake" data-value="${pre.wake}"`, label: 'קמתי' })}
     </div>
     <button type="button" class="btn secondary block press" data-action="sleep-save">${icon('check')}<span>${s ? 'עדכון שינה' : 'שמירת שינה'}</span></button>
   </section>`;
@@ -185,8 +187,8 @@ function addWater(ctx, ml) {
 }
 
 function readSleep(root) {
-  const bed = root.querySelector('[data-sleep=bed]')?.value;
-  const wake = root.querySelector('[data-sleep=wake]')?.value;
+  const bed = root.querySelector('[data-sleep=bed]')?.dataset.value;
+  const wake = root.querySelector('[data-sleep=wake]')?.dataset.value;
   return bed && wake ? { bed, wake } : null;
 }
 
@@ -228,20 +230,24 @@ function heroCard(k, day, st) {
       <li style="--c:var(--steps)"><i></i><span>צעדים</span><b>${num(steps)}</b></li>
       <li style="--c:var(--protein)"><i></i><span>חלבון</span><b>${num(protein)} ג׳</b></li>
     </ul>
-    <p class="hero-status">${statusLine(k, day, st, c, steps, protein)}</p>
+    <p class="hero-status">${esc(statusLine(day, st, c, steps, protein))}</p>
   </section>`;
 }
 
-/** One-line Hebrew status for the hero (HTML; each part stays unbroken). */
-function statusLine(k, day, st, c, steps, protein) {
-  if (day.rest) return 'יום מנוחה, הרצף נשמר';
-  const left = [];
+/**
+ * One line: the first remaining item, in a fixed order — exercises (skipped on rest days),
+ * steps, climbs, protein, water. Everything done → "כל היעדים של היום הושגו".
+ */
+export function statusLine(day, st, c, steps, protein) {
   const exLeft = c.total - c.done;
-  if (exLeft > 0) left.push(plural(exLeft, 'תרגיל אחד', 'תרגילים'));
-  if (st.stepsTarget && steps < st.stepsTarget) left.push(`${int(st.stepsTarget - steps)} צעדים`);
-  if (st.proteinTarget && protein < st.proteinTarget) left.push(`${int(st.proteinTarget - protein)} ג׳ חלבון`);
-  if (!left.length) return 'כל היעדים של היום הושגו';
-  return `${k < todayKey() ? 'חסרו' : 'נשארו'} ${left.map((x) => `<span class="nw">${esc(x)}</span>`).join(' · ')}`;
+  if (!day.rest && exLeft > 0) return `עוד ${plural(exLeft, 'תרגיל אחד', 'תרגילים')}`;
+  if (st.stepsTarget && steps < st.stepsTarget) return `עוד ${plural(st.stepsTarget - steps, 'צעד אחד', 'צעדים', int)}`;
+  const climbs = day.climbs.length;
+  if (st.climbsTarget && climbs < st.climbsTarget) return `עוד ${plural(st.climbsTarget - climbs, 'עלייה אחת', 'עליות')}`;
+  if (st.proteinTarget && protein < st.proteinTarget) return `עוד ${int(st.proteinTarget - protein)} ג׳ חלבון`;
+  const ml = waterMl(day);
+  if (st.waterTarget && ml < st.waterTarget) return `עוד ${trim((st.waterTarget - ml) / 1000, 2)} ל׳ מים`;
+  return 'כל היעדים של היום הושגו';
 }
 
 function stepsCard(day, st, badge) {
@@ -297,9 +303,9 @@ function ridesCard(day, st, badge) {
   const totalMin = day.rides.reduce((s, r) => s + (Number(r.minutes) || 0), 0);
   const list = day.rides
     .map(
-      (r, i) => `<li class="list-row">
-        <div class="grow"><strong>${num(r.km)} ק״מ</strong>${r.minutes ? ` · ${num(r.minutes)} דק׳` : ''}
-          ${r.note ? `<div class="muted small">${esc(r.note)}</div>` : ''}</div>
+      (r, i) => `<li class="list-row ride-row">
+        <div class="grow"><strong>${num(r.km)} ק״מ</strong>${r.minutes ? `<span class="muted"> · ${num(r.minutes)} דק׳</span>` : ''}${
+          r.note ? `<span class="muted"> · ${esc(r.note)}</span>` : ''}</div>
         <button type="button" class="icon-btn sm press danger-ic" data-action="ride-del" data-i="${i}" aria-label="מחיקת רכיבה">${icon('trash')}</button>
       </li>`
     )
@@ -308,24 +314,44 @@ function ridesCard(day, st, badge) {
     <div class="card-head">${icon('bike', 'head-ic')}<h2>רכיבה</h2>${badge('ride')}</div>
     <div class="row">
       ${ring({
-        id: 'ride', size: 108, stroke: 11, frac: goal ? longest / goal : 0,
+        id: 'ride', size: 96, stroke: 10, frac: goal ? longest / goal : 0,
         color: goal && longest >= goal ? 'var(--success)' : 'var(--accent)',
         inner: `<div class="ring-mid">${num(longest)}</div><div class="muted xs">שיא ק״מ</div>`,
       })}
       <div class="grow">
-        <div class="stat-num">${num(totalKm)}<small> ק״מ</small></div>
-        <div class="muted">ביום הזה${totalMin ? ` · ${num(totalMin)} דק׳` : ''}</div>
-        <div class="muted small">יעד רכיבה בודדת ${num(goal)} ק״מ</div>
+        <div class="stat-num">${num(totalKm)}<small> ק״מ היום</small></div>
+        <div class="muted small">${totalMin ? `${num(totalMin)} דק׳ · ` : ''}יעד לרכיבה אחת ${num(goal)} ק״מ</div>
       </div>
     </div>
-    ${list ? `<ul class="list">${list}</ul>` : ''}
-    <div class="field-grid">
-      <label class="field"><span>ק״מ</span><input type="number" inputmode="decimal" min="0" step="0.1" data-ride="km" placeholder="0"></label>
-      <label class="field"><span>דקות</span><input type="number" inputmode="numeric" min="0" data-ride="minutes" placeholder="0"></label>
-    </div>
-    <label class="field"><span>הערה (רשות)</span><input type="text" maxlength="60" data-ride="note" autocomplete="off"></label>
-    <button type="button" class="btn secondary block press" data-action="ride-add">${icon('plus')}<span>הוספת רכיבה</span></button>
+    ${list ? `<ul class="list">${list}</ul>` : '<p class="muted ride-empty">עוד לא רכבת היום</p>'}
+    <button type="button" class="btn secondary block press" data-action="ride-new">${icon('plus')}<span>רכיבה</span></button>
   </section>`;
+}
+
+/** Bottom sheet for a new ride. Resolves { km, minutes, note } or null. */
+function rideSheet() {
+  return openSheet({
+    title: 'רכיבה חדשה',
+    body: `<div class="field-grid">
+        <label class="field"><span>ק״מ</span><input name="km" type="number" inputmode="decimal" min="0" step="0.1" placeholder="0"></label>
+        <label class="field"><span>דקות</span><input name="minutes" type="number" inputmode="numeric" min="0" placeholder="0"></label>
+      </div>
+      <label class="field"><span>הערה (רשות)</span><input name="note" type="text" maxlength="60" autocomplete="off"></label>`,
+    onOpen: (r) => setTimeout(() => r.querySelector('[name=km]').focus(), 300),
+    actions: [
+      { label: 'ביטול', value: null, kind: 'ghost' },
+      {
+        label: 'הוספה',
+        kind: 'primary',
+        onClick: (r) => {
+          const km = parseNum(r.querySelector('[name=km]').value);
+          if (!(km > 0)) return invalid(r.querySelector('[name=km]'), 'יש להזין מרחק בק״מ');
+          const minutes = parseNum(r.querySelector('[name=minutes]').value);
+          return { km, minutes: minutes > 0 ? minutes : null, note: r.querySelector('[name=note]').value.trim() };
+        },
+      },
+    ],
+  });
 }
 
 function exerciseCards(k, day, ctx, rec) {
@@ -334,40 +360,80 @@ function exerciseCards(k, day, ctx, rec) {
     return `<section class="card empty-card">${emptyState('dumbbell', 'עדיין לא הוגדרו תרגילים. אפשר להוסיף אותם בהגדרות.',
       '<button type="button" class="btn secondary press" data-action="go-settings">הוספת תרגילים</button>')}</section>`;
   }
-  return list.map((ex) => exerciseCard(ex, day.exercises[ex.id], ctx, rec)).join('');
+  const done = list.filter((ex) => exerciseProgress(ex, day.exercises[ex.id]) >= 1).length;
+  return `<section class="card ex-list-card role-accent">
+    <div class="card-head">${icon('dumbbell', 'head-ic')}<h2>תרגילים</h2>
+      <span class="muted small">${num(`${done}/${list.length}`)} הושלמו</span></div>
+    <div class="ex-rows">${list.map((ex) => exerciseRow(ex, day.exercises[ex.id], ctx, rec)).join('')}</div>
+  </section>`;
 }
 
-function exerciseCard(ex, entry, ctx, rec) {
+/** Muted one-line target: "3×20 · 6 ק״ג", "60 שניות", "סט אחד עד כשל". */
+function compactTarget(ex) {
+  if (ex.type === 'setsReps') return `${num(`${ex.sets}×${ex.reps}`)}${ex.weight ? ` · ${num(ex.weight)} ק״ג` : ''}`;
+  if (ex.type === 'timed') return `${num(ex.seconds)} שניות${ex.weight ? ` · ${num(ex.weight)} ק״ג` : ''}`;
+  return `סט אחד עד כשל${ex.reps ? ` · יעד ${num(ex.reps)}` : ''}`;
+}
+
+/** Trailing status: "2/3 סטים", "45/60 שנ׳", "12/15 חזרות", "הושלם". */
+export function exerciseStatus(ex, entry) {
+  if (exerciseProgress(ex, entry) >= 1) return 'הושלם';
+  if (ex.type === 'setsReps') return `${num(`${(entry?.sets || []).filter((x) => x.done).length}/${ex.sets}`)} סטים`;
+  if (ex.type === 'timed') return `${num(`${entry?.seconds || 0}/${ex.seconds}`)} שנ׳`;
+  return entry?.reps ? `${num(`${entry.reps}/${ex.reps}`)} חזרות` : 'טרם בוצע';
+}
+
+function exerciseRow(ex, entry, ctx, rec) {
   const p = exerciseProgress(ex, entry);
   const complete = p >= 1;
-  const draw = ctx.justCompleted.has(ex.id);
-  const typeIcon = ex.type === 'timed' ? 'timer' : 'dumbbell';
+  const open = ctx.openEx === ex.id;
   const recBadge = ['reps', 'w', 'sec'].some((t) => rec.has(`${t}:${ex.id}`))
     ? `<span class="badge">${icon('trophy')}<span>שיא חדש</span></span>` : '';
   let body = '';
-  if (ex.type === 'setsReps') body = setsBody(ex, entry);
+  if (ex.type === 'setsReps') body = setsBody(ex, entry, ctx.hintEx === ex.id);
   else if (ex.type === 'timed') body = timedBody(ex, entry);
   else body = maxRepsBody(ex, entry);
-  return `<section class="card ex-card role-accent ${complete ? 'complete' : ''}">
-    <div class="card-head">
+  return `<section class="ex-card ${complete ? 'complete' : ''} ${open ? 'open' : ''}" data-exrow="${ex.id}">
+    <button type="button" class="ex-head press" data-action="ex-toggle" data-ex="${ex.id}" aria-expanded="${open}" aria-controls="exb-${ex.id}">
       ${ring({
-        id: `ex-${ex.id}`, size: 52, stroke: 6, frac: p, cls: 'ring-sm',
+        id: `ex-${ex.id}`, size: 44, stroke: 5, frac: p, cls: 'ring-sm',
         color: complete ? 'var(--success)' : 'var(--accent)',
-        inner: complete ? checkMark(draw) : icon(typeIcon),
+        inner: complete ? checkMark(ctx.justCompleted.has(ex.id)) : '',
       })}
-      <div class="grow"><h2>${esc(ex.name)}${ex.archived ? ' <span class="muted xs">(נמחק)</span>' : ''}</h2>
-        <span class="muted small">${targetText(ex)}</span></div>
-      ${recBadge}
-      ${ex.type === 'setsReps' ? `<button type="button" class="icon-btn sm press" data-action="sets-edit" data-ex="${ex.id}" aria-label="עריכת ביצוע">${icon('edit')}</button>` : ''}
-    </div>
-    ${body}
+      <span class="grow ex-meta"><h2 class="ex-name">${esc(ex.name)}${ex.archived ? ' <span class="muted xs">(נמחק)</span>' : ''}</h2>
+        <span class="muted small">${compactTarget(ex)}</span></span>
+      <span class="ex-status">${exerciseStatus(ex, entry)}</span>
+      ${icon('down', 'ex-chev')}
+    </button>
+    <div class="ex-body-wrap" id="exb-${ex.id}"><div class="ex-body">
+      ${recBadge ? `<div class="ex-tools">${recBadge}</div>` : ''}
+      ${body}
+    </div></div>
   </section>`;
+}
+
+/** Accordion: open one row (closing others) or close it — in place, so the height animates. */
+function toggleRow(root, ctx, id, forceClose = false) {
+  const rows = root.querySelectorAll('.ex-card');
+  const target = root.querySelector(`.ex-card[data-exrow="${id}"]`);
+  const opening = !forceClose && target && !target.classList.contains('open');
+  rows.forEach((r) => {
+    const on = opening && r === target;
+    r.classList.toggle('open', on);
+    r.querySelector('.ex-head')?.setAttribute('aria-expanded', String(on));
+  });
+  ctx.openEx = opening ? id : null;
+  // The "tap marks a set" hint belongs to the first sets exercise that gets opened, once.
+  if (opening && !ctx.hintEx && target.querySelector('.set-hint')) {
+    ctx.hintEx = id;
+    target.querySelector('.set-hint').hidden = false;
+  }
 }
 
 const prefillReps = (ex, i) => ex.last?.reps?.[i] ?? ex.reps;
 const prefillWeight = (ex) => ex.last?.weight ?? ex.weight ?? null;
 
-function setsBody(ex, entry) {
+function setsBody(ex, entry, showHint) {
   const sets = entry?.sets || [];
   const n = Math.max(ex.sets || 1, sets.length);
   let chips = '';
@@ -380,9 +446,9 @@ function setsBody(ex, entry) {
       <span class="chip-lbl">${done && s.weight ? `${num(s.weight)} ק״ג` : `סט ${num(i + 1)}`}</span>
     </button>`;
   }
-  // The how-to hint shows once (first sets card) instead of repeating on every card.
-  const first = exercisesForDay(ctxDate).find((e) => e.type === 'setsReps')?.id === ex.id;
-  return `<div class="chips">${chips}</div>${first ? '<p class="hint">הקשה מסמנת סט · לחיצה ארוכה לעריכת חזרות</p>' : ''}`;
+  return `<div class="chips">${chips}</div>
+    <div class="ex-foot"><p class="hint set-hint grow" ${showHint ? '' : 'hidden'}>הקשה מסמנת סט · לחיצה ארוכה לעריכת חזרות</p>
+      <button type="button" class="icon-btn sm press" data-action="sets-edit" data-ex="${ex.id}" aria-label="עריכת ביצוע">${icon('edit')}</button></div>`;
 }
 
 function timedBody(ex, entry) {
@@ -454,14 +520,10 @@ async function onClick(e, ctx) {
     case 'climb-undo':
       updateDay(k, (d) => d.climbs.pop());
       return rerender();
-    case 'ride-add': {
-      const root = b.closest('.card');
-      const kmIn = root.querySelector('[data-ride=km]');
-      const km = parseNum(kmIn.value);
-      if (!(km > 0)) return invalid(kmIn, 'יש להזין מרחק בק״מ');
-      const minutes = parseNum(root.querySelector('[data-ride=minutes]').value);
-      const note = root.querySelector('[data-ride=note]').value.trim();
-      updateDay(k, (d) => d.rides.push({ km, minutes: minutes > 0 ? minutes : null, note }));
+    case 'ride-new': {
+      const ride = await rideSheet();
+      if (!ride) return;
+      updateDay(k, (d) => d.rides.push(ride));
       vibrate(HAPTIC.item);
       toast('הרכיבה נוספה');
       return rerender();
@@ -511,6 +573,17 @@ async function onClick(e, ctx) {
     }
     case 'achievements':
       return ctx.goTab('achievements');
+    case 'ex-toggle':
+      return toggleRow(b.closest('#app') || document, ctx, b.dataset.ex);
+    case 'pick-sleep': {
+      const v = await openTimePicker({ value: b.dataset.value, step: 5, title: b.dataset.sleep === 'bed' ? 'הלכתי לישון' : 'קמתי' });
+      if (!v) return;
+      b.dataset.value = v;
+      b.querySelector('.time-field-val').textContent = v;
+      b.setAttribute('aria-label', `${b.querySelector('.time-field-lbl').textContent}: ${v}`);
+      previewSleep(root());
+      return;
+    }
     case 'sleep-save': {
       const sl = readSleep(root());
       if (!sl || !sleepMinutes(sl)) return invalid(root().querySelector('[data-sleep=wake]'), 'שעות שינה לא תקינות');
