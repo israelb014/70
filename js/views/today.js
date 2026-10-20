@@ -125,6 +125,9 @@ function levelChip() {
 /** durText with the number isolated LTR ("1:20" must not flip inside RTL text). */
 const durHTML = (m) => esc(durText(m)).replace(/[\d:]+/, (d) => `<bdi class="num">${d}</bdi>`);
 
+/** "יעד 8 שעות" / "יעד שעה אחת" (number isolated). The big number already shows the night duration. */
+const targetHTML = (h) => `יעד ${esc(plural(h, 'שעה אחת', 'שעות')).replace(/[\d.,]+/, (d) => `<bdi class="num">${d}</bdi>`)}`;
+
 function sleepCard(day, st) {
   const target = st.sleepTarget || 8;
   const s = day.sleep;
@@ -142,7 +145,7 @@ function sleepCard(day, st) {
       })}
       <div class="grow">
         <div class="stat-num">${s ? num(fmtDuration(min)) : '–'}<small> שעות</small></div>
-        <div class="muted small" data-sleep-preview>${s ? '' : 'עוד לא נרשם · '}משך ${num(fmtDuration(sleepMinutes(pre)))} · יעד ${num(target)} שעות</div>
+        <div class="muted small" data-sleep-preview${s ? ' data-night="1"' : ''}>${s ? targetHTML(target) : `עוד לא נרשם · משך ${num(fmtDuration(sleepMinutes(pre)))} · יעד ${num(target)} שעות`}</div>
         ${hasSleep(day) ? `<div class="sleep-tot">${naps.length ? `<span data-naps-total>תנומות: ${durHTML(napsMinutes(day))}</span>` : ''}
           <b data-sleep-total>סה״כ שינה: ${durHTML(total)}</b></div>` : ''}
       </div>
@@ -274,7 +277,12 @@ function readSleep(root) {
 function previewSleep(root) {
   const s = readSleep(root);
   const el = root.querySelector('[data-sleep-preview]');
-  if (el && s) el.innerHTML = `משך ${num(fmtDuration(sleepMinutes(s)))} · יעד ${num(getState().settings.sleepTarget || 8)} שעות`;
+  if (!el || !s) return;
+  const target = getState().settings.sleepTarget || 8;
+  // With a saved night the big number shows the duration; the line keeps only the target.
+  el.innerHTML = el.dataset.night
+    ? targetHTML(target)
+    : `משך ${num(fmtDuration(sleepMinutes(s)))} · יעד ${num(target)} שעות`;
 }
 
 function heroCard(k, day, st) {
