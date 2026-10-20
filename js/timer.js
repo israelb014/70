@@ -1,5 +1,6 @@
 // Full-screen countdown for timed holds: big SVG ring, Wake Lock, beep + vibration at the end.
 import { icon, esc, beep, vibrate, primeAudio } from './ui.js';
+import { arcPath } from './charts.js';
 
 /**
  * Runs a countdown of `seconds`. Resolves with the seconds achieved
@@ -10,7 +11,6 @@ export function runTimer(seconds, name) {
   return new Promise((resolve) => {
     const size = 280, stroke = 18;
     const r = (size - stroke) / 2;
-    const c = 2 * Math.PI * r;
     const el = document.createElement('div');
     el.className = 'timer-overlay';
     el.innerHTML = `<div class="timer-inner">
@@ -18,9 +18,8 @@ export function runTimer(seconds, name) {
       <div class="timer-ring">
         <svg viewBox="0 0 ${size} ${size}" aria-hidden="true">
           <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--track)" stroke-width="${stroke}"/>
-          <circle class="timer-fill" cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--accent)"
-            stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${c}" stroke-dashoffset="0"
-            transform="rotate(-90 ${size / 2} ${size / 2})"/>
+          <path class="timer-fill" d="${arcPath(size / 2, size / 2, r, 1, stroke)}" fill="none" stroke="var(--accent)"
+            stroke-width="${stroke}" stroke-linecap="round"/>
         </svg>
         <div class="timer-center"><bdi class="timer-num num">${seconds}</bdi><span class="muted">שניות</span></div>
       </div>
@@ -77,7 +76,7 @@ export function runTimer(seconds, name) {
     const tick = () => {
       const t = elapsed();
       const left = Math.max(0, seconds - t);
-      fill.setAttribute('stroke-dashoffset', String(c * (1 - left / seconds)));
+      fill.setAttribute('d', arcPath(size / 2, size / 2, r, left / seconds, stroke));
       numEl.textContent = String(Math.ceil(left));
       if (left <= 0) {
         finished = true;

@@ -4,15 +4,61 @@ import { shortDate, weekdayShort, weekStart, addDays, parseKey } from './dates.j
 const clamp01 = (v) => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
 
 /**
- * Dash offset for a round-capped arc whose VISIBLE length (dash + both caps) equals frac × circumference.
- * Round caps add stroke/2 at each end, so the dash itself is shortened by one stroke width.
- * Full rings are drawn exactly full; 0 hides the arc.
+ * SVG path for a round-capped progress arc on a circle of radius `r` (in the SVG's own coordinates),
+ * starting at 12 o'clock and running clockwise. The VISIBLE length (arc + both round caps) equals
+ * frac × 2πr of THIS circle, so the arc is shortened by one stroke width (stroke/2 per cap).
+ * Drawn as real arc geometry, not a dashed circle, so it does not depend on the renderer's dash or
+ * path-length handling, CSS scaling or CSS custom properties. Full rings are closed circles; 0 is empty.
  */
-export function arcOffset(c, frac, stroke) {
+export function arcPath(cx, cy, r, frac, stroke) {
   const f = clamp01(frac);
-  if (f >= 1) return 0;
-  const dash = Math.max(0, f * c - stroke);
-  return c - dash;
+  if (f <= 0) return '';
+  const pt = (a) => `${(cx + r * Math.sin(a)).toFixed(3)} ${(cy - r * Math.cos(a)).toFixed(3)}`;
+  if (f >= 1) return `M${pt(0)}A${r} ${r} 0 1 1 ${pt(Math.PI)}A${r} ${r} 0 1 1 ${pt(0)}Z`;
+  const a = Math.max(1e-4, (f * 2 * Math.PI * r - stroke) / r); // arc angle without the caps
+  return `M${pt(0)}A${r} ${r} 0 ${a > Math.PI ? 1 : 0} 1 ${pt(a)}`;
+}
+
+/** Arc element markup. data-* carry the circle's own geometry for the fill animation. */
+export function arcFill({ cx, r, stroke, frac, from = 0, color, cls = 'ring-fill', delay = 0, dur, extra = '' }) {
+  const f = clamp01(frac);
+  if (from !== f) scheduleArcs();
+  return `<path class="${cls}" d="${arcPath(cx, cx, r, f, stroke)}" fill="none" stroke="${color}" stroke-width="${stroke}"
+    stroke-linecap="round" data-cx="${cx}" data-r="${r}" data-stroke="${stroke}" data-frac="${f}"
+    ${from !== f ? `data-from="${clamp01(from)}" data-delay="${delay}"${dur ? ` data-dur="${dur}"` : ''}` : ''} ${extra}/>`;
+}
+
+// Fill animation: one rAF loop tweens each pending arc from data-from to data-frac, recomputing the
+// path from that element's own radius every frame. Runs before the first paint of new markup.
+let arcsQueued = false;
+const easeOut = (t) => 1 - Math.pow(1 - t, 5); // ≈ var(--ease-out)
+export function scheduleArcs() {
+  if (arcsQueued) return;
+  arcsQueued = true;
+  requestAnimationFrame(() => {
+    arcsQueued = false;
+    const els = [...document.querySelectorAll('path[data-from]')];
+    if (!els.length) return;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const ringMs = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--d-ring')) || 700;
+    const t0 = performance.now();
+    const arcs = els.map((el) => {
+      const a = { el, cx: +el.dataset.cx, r: +el.dataset.r, stroke: +el.dataset.stroke, from: +el.dataset.from, to: +el.dataset.frac,
+        delay: +el.dataset.delay || 0, dur: +el.dataset.dur || ringMs };
+      el.removeAttribute('data-from');
+      return a;
+    });
+    const frame = (now) => {
+      let running = false;
+      for (const a of arcs) {
+        const t = reduce ? 1 : Math.max(0, Math.min(1, (now - t0 - a.delay) / a.dur));
+        if (t < 1) running = true;
+        a.el.setAttribute('d', arcPath(a.cx, a.cx, a.r, a.from + (a.to - a.from) * easeOut(t), a.stroke));
+      }
+      if (running) requestAnimationFrame(frame);
+    };
+    frame(t0);
+  });
 }
 const fmt = (n) => Number(n).toLocaleString('he-IL', { maximumFractionDigits: 1 });
 
@@ -22,23 +68,18 @@ const lastFrac = new Map();
 
 /**
  * Progress ring. `inner` is HTML placed in the center.
- * The fill animates from the previous value (or 0 on first paint) via CSS keyframes.
+ * The fill animates from the previous value (or 0 on first paint).
  */
 export function ring({ id, size = 120, stroke = 12, frac, color = 'var(--accent)', inner = '', cls = '' }) {
   const f = clamp01(frac);
   const r = (size - stroke) / 2;
-  const c = 2 * Math.PI * r;
-  const to = arcOffset(c, f, stroke);
-  const from = id && lastFrac.has(id) ? arcOffset(c, lastFrac.get(id), stroke) : c;
+  const from = id && lastFrac.has(id) ? lastFrac.get(id) : 0;
   if (id) lastFrac.set(id, f);
   const h = size / 2;
   return `<div class="ring ${cls}" style="width:${size}px;height:${size}px">
     <svg viewBox="0 0 ${size} ${size}" aria-hidden="true">
       <circle cx="${h}" cy="${h}" r="${r}" fill="none" stroke="var(--track)" stroke-width="${stroke}"/>
-      <circle class="ring-fill" cx="${h}" cy="${h}" r="${r}" fill="none" stroke="${color}"
-        stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${c.toFixed(2)}"
-        stroke-dashoffset="${to.toFixed(2)}" style="--from:${from.toFixed(2)};--to:${to.toFixed(2)}${f <= 0 ? ';opacity:0' : ''}"
-        transform="rotate(-90 ${h} ${h})"/>
+      ${arcFill({ cx: h, r, stroke, frac: f, from, color })}
     </svg>
     <div class="ring-inner">${inner}</div>
   </div>`;
@@ -46,23 +87,19 @@ export function ring({ id, size = 120, stroke = 12, frac, color = 'var(--accent)
 
 /**
  * Three concentric rings (outer → inner), each { id, frac, color }. `inner` is centered HTML.
+ * Every ring's arc is computed from its own radius.
  */
 export function concentricRings({ rings, size = 196, stroke = 14, gap = 5, inner = '' }) {
   const h = size / 2;
   let circles = '';
   rings.forEach((rg, i) => {
     const r = h - stroke / 2 - i * (stroke + gap);
-    const c = 2 * Math.PI * r;
     const f = clamp01(rg.frac);
-    const to = arcOffset(c, f, stroke);
-    const from = rg.id && lastFrac.has(rg.id) ? arcOffset(c, lastFrac.get(rg.id), stroke) : c;
+    const from = rg.id && lastFrac.has(rg.id) ? lastFrac.get(rg.id) : 0;
     if (rg.id) lastFrac.set(rg.id, f);
     // Neutral tracks keep adjacent arcs (accent / steps) visually separate.
     circles += `<circle cx="${h}" cy="${h}" r="${r}" fill="none" stroke="var(--track)" stroke-width="${stroke}"/>
-      <circle class="ring-fill" cx="${h}" cy="${h}" r="${r}" fill="none" stroke="${rg.color}" stroke-width="${stroke}"
-        stroke-linecap="round" stroke-dasharray="${c.toFixed(2)}" stroke-dashoffset="${to.toFixed(2)}"
-        data-frac="${f}" style="--from:${from.toFixed(2)};--to:${to.toFixed(2)};animation-delay:${i * 90}ms${f <= 0 ? ';opacity:0' : ''}"
-        transform="rotate(-90 ${h} ${h})"/>`;
+      ${arcFill({ cx: h, r, stroke, frac: f, from, color: rg.color, delay: i * 90 })}`;
   });
   return `<div class="ring rings3" style="width:${size}px;height:${size}px">
     <svg viewBox="0 0 ${size} ${size}" aria-hidden="true">${circles}</svg>

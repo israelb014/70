@@ -1,11 +1,11 @@
 // Full-screen level-up celebration (animation is disabled by the global prefers-reduced-motion rule).
 import { icon, vibrate, HAPTIC, confetti } from './ui.js';
+import { arcFill } from './charts.js';
 
 export function celebrateLevel(level) {
   return new Promise((resolve) => {
     const size = 240, stroke = 16;
     const r = (size - stroke) / 2;
-    const c = 2 * Math.PI * r;
     const el = document.createElement('div');
     el.className = 'celebrate';
     el.setAttribute('role', 'dialog');
@@ -15,9 +15,7 @@ export function celebrateLevel(level) {
       <div class="celebrate-ring">
         <svg viewBox="0 0 ${size} ${size}" aria-hidden="true">
           <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--track)" stroke-width="${stroke}"/>
-          <circle class="celebrate-fill" cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--accent)"
-            stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${c.toFixed(1)}" style="--c:${c.toFixed(1)}"
-            transform="rotate(-90 ${size / 2} ${size / 2})"/>
+          ${arcFill({ cx: size / 2, r, stroke, frac: 1, from: 0, color: 'var(--accent)', cls: 'celebrate-fill', delay: 150, dur: 1000 })}
         </svg>
         <div class="celebrate-num"><bdi class="num">${level}</bdi></div>
       </div>
