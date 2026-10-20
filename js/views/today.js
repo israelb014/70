@@ -1,9 +1,9 @@
 // "היום" tab: completion ring + streak, steps, stairs, cycling, exercises and rest day.
 import { getState, getDay, updateDay, save, exerciseById } from '../storage.js';
-import { ring } from '../charts.js';
+import { ring, concentricRings } from '../charts.js';
 import {
   icon, esc, fmt, num, parseNum, toast, vibrate, openSheet, confirmDialog, invalid,
-  checkMark, dateNav, handleDateNav,
+  checkMark, dateNav, handleDateNav, HAPTIC, confetti, emptyState,
 } from '../ui.js';
 import {
   dayCompletion, currentStreak, exercisesForDay, exerciseProgress, computeRecords, recordIdsOn,
@@ -15,7 +15,10 @@ import { levelInfo, sleepMinutes, fmtDuration, lastSleep } from '../progress.js'
 import { waterMl } from '../stats.js';
 import { nowTime } from '../dates.js';
 import { dailySummary, copyText } from '../export.js';
-import { plural } from '../hebrew.js';
+import { plural, int } from '../hebrew.js';
+import { dayInsights } from '../insights.js';
+import { foodTotals } from '../stats.js';
+import { todayKey } from '../dates.js';
 
 // Unicode isolate for numbers inside plain-text (non-HTML) RTL strings.
 const iso = (s) => `⁦${s}⁩`;
@@ -27,9 +30,12 @@ export function render(root, ctx) {
   const rec = recordIdsOn(k, computeRecords().events);
   const badge = (id) => (rec.has(id) ? `<span class="badge">${icon('trophy')}<span>שיא חדש</span></span>` : '');
 
+  celebrateNewRecords(ctx, k, rec);
+
   root.innerHTML = `
-    ${dateNav(k, '70', levelChip())}
-    ${heroCard(k, day)}
+    ${dateNav(k, '70')}
+    ${heroCard(k, day, st)}
+    ${insightCard(k)}
     ${stepsCard(day, st, badge)}
     ${sleepCard(day, st)}
     ${waterCard(day, st)}
@@ -47,6 +53,50 @@ export function render(root, ctx) {
   root.oninput = (e) => {
     if (e.target.dataset.sleep) previewSleep(root);
   };
+  bindInsightDots(root);
+}
+
+/** Confetti + haptics + toast when an action sets a new personal record on the shown day. */
+function celebrateNewRecords(ctx, k, rec) {
+  ctx.recSeen ||= {};
+  const prev = ctx.recSeen[k];
+  if (prev && [...rec].some((id) => !prev.has(id))) {
+    confetti();
+    vibrate(HAPTIC.record);
+    toast('שיא אישי חדש', { iconHTML: icon('trophy'), big: true });
+  }
+  ctx.recSeen[k] = rec;
+}
+
+/* ---------- Insights carousel ---------- */
+
+const KIND_LABEL = { positive: 'חיובי', attention: 'לתשומת לב', neutral: 'מידע' };
+
+function insightCard(k) {
+  const list = dayInsights(k).slice(0, 4);
+  if (!list.length) {
+    return `<section class="card insight-card is-empty">${emptyState('insights', 'עוד כמה ימים של נתונים ונתחיל להציג תובנות')}</section>`;
+  }
+  return `<section class="card insight-card" aria-label="תובנות">
+    <div class="insight-track" data-insights>
+      ${list.map((x) => `<article class="insight kind-${x.kind}">
+          <span class="insight-ic">${icon(`cat-${x.cat}`)}</span>
+          <div class="grow"><span class="insight-kind">${KIND_LABEL[x.kind]}</span><p>${esc(x.text)}</p></div>
+        </article>`).join('')}
+    </div>
+    ${list.length > 1 ? `<div class="insight-dots">${list.map((_, i) => `<i class="${i ? '' : 'on'}"></i>`).join('')}</div>` : ''}
+  </section>`;
+}
+
+function bindInsightDots(root) {
+  const track = root.querySelector('[data-insights]');
+  const dots = root.querySelectorAll('.insight-dots i');
+  if (!track || !dots.length) return;
+  track.addEventListener('scroll', () => {
+    const w = track.clientWidth || 1;
+    const i = Math.round(Math.abs(track.scrollLeft) / w);
+    dots.forEach((d, j) => d.classList.toggle('on', j === i));
+  }, { passive: true });
 }
 
 /* ---------- Cards ---------- */
@@ -65,13 +115,13 @@ function sleepCard(day, st) {
   const s = day.sleep;
   const pre = s || lastSleep() || { bed: '23:00', wake: '07:00' };
   const min = s ? sleepMinutes(s) : 0;
-  return `<section class="card">
+  return `<section class="card role-sleep">
     <div class="card-head">${icon('bed', 'head-ic')}<h2>שינה</h2>
       ${s ? `<button type="button" class="icon-btn sm press danger-ic" data-action="sleep-del" aria-label="מחיקת שינה">${icon('trash')}</button>` : ''}</div>
     <div class="row">
       ${ring({
         id: 'sleep', size: 108, stroke: 11, frac: min / (target * 60),
-        color: min >= target * 60 ? 'var(--success)' : 'var(--protein)',
+        color: min >= target * 60 ? 'var(--success)' : 'var(--sleep)',
         inner: `<div class="ring-mid">${num(fmtDuration(min))}</div><div class="muted xs">שעות</div>`,
       })}
       <div class="grow">
@@ -95,13 +145,13 @@ function waterCard(day, st) {
   const target = st.waterTarget || 2500;
   const ml = waterMl(day);
   const last = day.water.at(-1);
-  return `<section class="card water-card">
+  return `<section class="card water-card role-water">
     <div class="card-head">${icon('drop', 'head-ic')}<h2>מים</h2>
       <button type="button" class="icon-btn sm press" data-action="water-undo" aria-label="ביטול הוספה אחרונה" ${last ? '' : 'disabled'}>${icon('undo')}</button></div>
     <div class="row">
       ${ring({
         id: 'water', size: 132, stroke: 13, frac: ml / target,
-        color: ml >= target ? 'var(--success)' : 'var(--protein)',
+        color: ml >= target ? 'var(--success)' : 'var(--water)',
         inner: `<div class="ring-big xs">${num(liters(ml))}</div><div class="muted small">ל׳</div>`,
       })}
       <div class="grow">
@@ -125,9 +175,9 @@ function addWater(ctx, ml) {
   const after = waterMl(getDay(ctx.date));
   const target = st.waterTarget || 2500;
   if (before < target && after >= target) {
-    vibrate([40, 50, 40]);
+    vibrate(HAPTIC.target);
     toast('יעד המים הושג');
-  } else vibrate(20);
+  } else vibrate(HAPTIC.item);
   ctx.rerender();
 }
 
@@ -143,34 +193,63 @@ function previewSleep(root) {
   if (el && s) el.innerHTML = `משך ${num(fmtDuration(sleepMinutes(s)))} · יעד ${num(getState().settings.sleepTarget || 8)} שעות`;
 }
 
-function heroCard(k, day) {
+function heroCard(k, day, st) {
   const c = dayCompletion(k);
   const pct = Math.round(c.fraction * 100);
   const streak = currentStreak();
+  const steps = day.steps || 0;
+  const protein = Math.round(foodTotals(k).protein);
+  const L = levelInfo();
   return `<section class="card hero">
-    ${ring({
-      id: 'hero', size: 172, stroke: 16, frac: c.fraction,
-      color: pct >= 100 ? 'var(--success)' : 'var(--accent)',
-      inner: `<div class="ring-big">${num(pct)}<small>%</small></div>
-        <div class="muted small">${c.total ? `${num(c.done)} מתוך ${num(c.total)} תרגילים` : 'אין תרגילים'}</div>`,
-    })}
-    <div class="hero-side">
-      <div class="streak ${streak ? 'on' : ''}">${icon('flame')}<span class="streak-num">${num(streak)}</span></div>
-      <div class="muted">${streak === 1 ? 'יום רצף' : 'ימי רצף'}</div>
-      ${day.rest ? `<span class="pill">${icon('moon')}<span>יום מנוחה</span></span>` : ''}
+    <div class="hero-main">
+      ${concentricRings({
+        rings: [
+          { id: 'hero-ex', frac: c.fraction, color: 'var(--accent)' },
+          { id: 'hero-steps', frac: st.stepsTarget ? steps / st.stepsTarget : 0, color: 'var(--steps)' },
+          { id: 'hero-protein', frac: st.proteinTarget ? protein / st.proteinTarget : 0, color: 'var(--protein)' },
+        ],
+        inner: `<div class="ring-big"><bdi class="num" data-count="${pct}">${pct}</bdi><small>%</small></div>
+          <div class="caption">${c.total ? 'אימון' : 'אין תרגילים'}</div>`,
+      })}
+      <div class="hero-side">
+        <button type="button" class="level-chip press" data-action="achievements" aria-label="רמה ${L.level} · הישגים">
+          ${ring({ id: 'level-chip', size: 34, stroke: 4, frac: L.frac, inner: `<span class="level-chip-num">${num(L.level)}</span>` })}
+          <span>רמה ${num(L.level)}</span>
+        </button>
+        <div class="streak ${streak ? 'on' : ''}">${icon('flame')}<span class="streak-num">${num(streak)}</span></div>
+        <div class="caption">${streak === 1 ? 'יום רצף' : 'ימי רצף'}</div>
+      </div>
     </div>
+    <ul class="ring-legend">
+      <li style="--c:var(--accent)"><i></i><span>תרגילים</span><b>${num(`${c.done}/${c.total}`)}</b></li>
+      <li style="--c:var(--steps)"><i></i><span>צעדים</span><b>${num(steps)}</b></li>
+      <li style="--c:var(--protein)"><i></i><span>חלבון</span><b>${num(protein)} ג׳</b></li>
+    </ul>
+    <p class="hero-status">${statusLine(k, day, st, c, steps, protein)}</p>
   </section>`;
+}
+
+/** One-line Hebrew status for the hero (HTML; each part stays unbroken). */
+function statusLine(k, day, st, c, steps, protein) {
+  if (day.rest) return 'יום מנוחה, הרצף נשמר';
+  const left = [];
+  const exLeft = c.total - c.done;
+  if (exLeft > 0) left.push(plural(exLeft, 'תרגיל אחד', 'תרגילים'));
+  if (st.stepsTarget && steps < st.stepsTarget) left.push(`${int(st.stepsTarget - steps)} צעדים`);
+  if (st.proteinTarget && protein < st.proteinTarget) left.push(`${int(st.proteinTarget - protein)} ג׳ חלבון`);
+  if (!left.length) return 'כל היעדים של היום הושגו';
+  return `${k < todayKey() ? 'חסרו' : 'נשארו'} ${left.map((x) => `<span class="nw">${esc(x)}</span>`).join(' · ')}`;
 }
 
 function stepsCard(day, st, badge) {
   const target = st.stepsTarget || 0;
   const steps = day.steps || 0;
-  return `<section class="card">
+  return `<section class="card role-steps">
     <div class="card-head">${icon('steps', 'head-ic')}<h2>צעדים</h2>${badge('steps')}</div>
     <div class="row">
       ${ring({
         id: 'steps', size: 108, stroke: 11, frac: target ? steps / target : 0,
-        color: target && steps >= target ? 'var(--success)' : 'var(--accent)',
+        color: target && steps >= target ? 'var(--success)' : 'var(--steps)',
         inner: `<div class="ring-mid">${num(steps)}</div>`,
       })}
       <div class="grow">
@@ -185,13 +264,13 @@ function stepsCard(day, st, badge) {
 function stairsCard(day, st, badge) {
   const count = day.climbs.length;
   const target = st.climbsTarget || 0;
-  return `<section class="card">
+  return `<section class="card role-accent">
     <div class="card-head">${icon('stairs', 'head-ic')}<h2>מדרגות</h2>${badge('climbs')}</div>
     <div class="row">
       ${ring({
         id: 'climbs', size: 108, stroke: 11, frac: target ? count / target : 0,
         color: target && count >= target ? 'var(--success)' : 'var(--accent)',
-        inner: `<div class="ring-mid">${num(count)}<small>/${num(target)}</small></div>`,
+        inner: `<div class="ring-mid"><bdi class="num">${fmt(count)}<small>/${fmt(target)}</small></bdi></div>`,
       })}
       <div class="grow">
         <div class="stat-num">${num(floorsOf(day))}</div>
@@ -222,7 +301,7 @@ function ridesCard(day, st, badge) {
       </li>`
     )
     .join('');
-  return `<section class="card">
+  return `<section class="card role-accent">
     <div class="card-head">${icon('bike', 'head-ic')}<h2>רכיבה</h2>${badge('ride')}</div>
     <div class="row">
       ${ring({
@@ -249,11 +328,8 @@ function ridesCard(day, st, badge) {
 function exerciseCards(k, day, ctx, rec) {
   const list = exercisesForDay(k);
   if (!list.length) {
-    return `<section class="card empty-card">
-      ${icon('dumbbell', 'head-ic')}
-      <p>עדיין לא הוגדרו תרגילים.</p>
-      <button type="button" class="btn secondary press" data-action="go-settings">הוספת תרגילים בהגדרות</button>
-    </section>`;
+    return `<section class="card empty-card">${emptyState('dumbbell', 'עדיין לא הוגדרו תרגילים. אפשר להוסיף אותם בהגדרות.',
+      '<button type="button" class="btn secondary press" data-action="go-settings">הוספת תרגילים</button>')}</section>`;
   }
   return list.map((ex) => exerciseCard(ex, day.exercises[ex.id], ctx, rec)).join('');
 }
@@ -269,7 +345,7 @@ function exerciseCard(ex, entry, ctx, rec) {
   if (ex.type === 'setsReps') body = setsBody(ex, entry);
   else if (ex.type === 'timed') body = timedBody(ex, entry);
   else body = maxRepsBody(ex, entry);
-  return `<section class="card ex-card ${complete ? 'complete' : ''}">
+  return `<section class="card ex-card role-accent ${complete ? 'complete' : ''}">
     <div class="card-head">
       ${ring({
         id: `ex-${ex.id}`, size: 52, stroke: 6, frac: p, cls: 'ring-sm',
@@ -307,7 +383,7 @@ function setsBody(ex, entry) {
 function timedBody(ex, entry) {
   const sec = entry?.seconds || 0;
   return `<div class="row">
-      <div class="grow"><div class="stat-num">${num(sec)}<small>/${num(ex.seconds)}</small></div><div class="muted">שניות</div></div>
+      <div class="grow"><div class="stat-num"><bdi class="num">${fmt(sec)}<small>/${fmt(ex.seconds)}</small></bdi></div><div class="muted">שניות</div></div>
       <button type="button" class="btn primary press" data-action="timer" data-ex="${ex.id}">${icon('play')}<span>טיימר</span></button>
     </div>
     <div class="inline-form">
@@ -336,7 +412,7 @@ function trackCompletion(ctx, ex, fn) {
   const after = exerciseProgress(ex, getDay(ctx.date).exercises[ex.id]);
   if (before < 1 && after >= 1) {
     ctx.justCompleted.add(ex.id);
-    vibrate([40, 50, 40]);
+    vibrate(HAPTIC.target);
   }
 }
 
@@ -365,9 +441,9 @@ async function onClick(e, ctx) {
       updateDay(k, (d) => d.climbs.push({ type, floors }));
       const count = getDay(k).climbs.length;
       if (st.climbsTarget && count === st.climbsTarget) {
-        vibrate([40, 50, 40]);
+        vibrate(HAPTIC.target);
         toast('יעד העליות הושג');
-      } else vibrate(20);
+      } else vibrate(HAPTIC.item);
       return rerender();
     }
     case 'climb-undo':
@@ -381,7 +457,7 @@ async function onClick(e, ctx) {
       const minutes = parseNum(root.querySelector('[data-ride=minutes]').value);
       const note = root.querySelector('[data-ride=note]').value.trim();
       updateDay(k, (d) => d.rides.push({ km, minutes: minutes > 0 ? minutes : null, note }));
-      vibrate(30);
+      vibrate(HAPTIC.item);
       toast('הרכיבה נוספה');
       return rerender();
     }
@@ -434,7 +510,7 @@ async function onClick(e, ctx) {
       const sl = readSleep(root());
       if (!sl || !sleepMinutes(sl)) return invalid(root().querySelector('[data-sleep=wake]'), 'שעות שינה לא תקינות');
       updateDay(k, (d) => (d.sleep = sl));
-      vibrate(20);
+      vibrate(HAPTIC.item);
       toast(`נשמרו ${fmtDuration(sleepMinutes(sl))} שעות שינה`);
       return rerender();
     }
@@ -474,7 +550,7 @@ async function onClick(e, ctx) {
       return rerender();
     case 'rest':
       updateDay(k, (d) => (d.rest = !d.rest));
-      if (getDay(k).rest) vibrate(30);
+      if (getDay(k).rest) vibrate(HAPTIC.item);
       return rerender();
     case 'go-settings':
       return ctx.goTab('settings');
@@ -490,7 +566,7 @@ function onChange(e, ctx) {
     updateDay(ctx.date, (d) => (d.steps = v !== null && v >= 0 ? Math.round(v) : null));
     const after = getDay(ctx.date).steps || 0;
     if (target && before < target && after >= target) {
-      vibrate([40, 50, 40]);
+      vibrate(HAPTIC.target);
       toast('יעד הצעדים הושג');
     }
     ctx.rerender();
@@ -517,7 +593,7 @@ function toggleSet(ctx, ex, i) {
         s.done = true;
         s.reps = s.reps ?? prefillReps(ex, i);
         s.weight = s.weight ?? prefillWeight(ex);
-        vibrate(15);
+        vibrate(HAPTIC.item);
       }
     })
   );

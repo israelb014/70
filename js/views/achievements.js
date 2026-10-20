@@ -21,9 +21,9 @@ export function render(root, ctx) {
         inner: `<div class="muted small">רמה</div><div class="ring-big">${num(L.level)}</div>`,
       })}
       <div class="level-stats">
-        <div><span class="stat-num">${num(L.xp)}</span><span class="muted small">XP בסך הכול</span></div>
-        <div><span class="stat-num">${num(L.toNext)}</span><span class="muted small">XP לרמה ${num(L.level + 1)}</span></div>
-        <div><span class="stat-num">${num(weekXP())}</span><span class="muted small">XP ב-7 הימים האחרונים</span></div>
+        <div><span class="stat-num">${num(L.xp)}</span><span class="muted small">נקודות בסך הכול</span></div>
+        <div><span class="stat-num">${num(L.toNext)}</span><span class="muted small">חסרות לרמה ${num(L.level + 1)}</span></div>
+        <div><span class="stat-num">${num(weekXP())}</span><span class="muted small">נקודות ב-7 ימים</span></div>
       </div>
     </section>
     <section class="card">

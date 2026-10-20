@@ -45,6 +45,30 @@ const P = {
   alert: '<path d="M12 4l9 16H3z"/><path d="M12 10v4.5M12 17.5h.01"/>',
 };
 
+// Filled variants for the active tab (outline when inactive).
+const FILLED = {
+  today: '<circle cx="12" cy="12" r="9.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="4.5" stroke="var(--bg)" stroke-width="2.2"/><circle cx="12" cy="12" r="1.2" fill="var(--bg)" stroke="none"/>',
+  food: '<path d="M6 3v7a2.5 2.5 0 0 0 5 0V3M8.5 3v18"/><path d="M17.5 21V3c-2.2 1.2-3.5 4-3.5 8h3.5z" fill="currentColor"/>',
+  trends: '<path d="M3 20h18" /><rect x="4.5" y="12" width="3.5" height="6" rx="1.2" fill="currentColor" stroke="none"/><rect x="10.25" y="8" width="3.5" height="10" rx="1.2" fill="currentColor" stroke="none"/><rect x="16" y="4" width="3.5" height="14" rx="1.2" fill="currentColor" stroke="none"/>',
+  settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.6" fill="currentColor"/><circle cx="9" cy="17" r="2.6" fill="currentColor"/>',
+};
+P.trendsOutline = '<path d="M3 20h18"/><rect x="4.5" y="12" width="3.5" height="6" rx="1.2"/><rect x="10.25" y="8" width="3.5" height="10" rx="1.2"/><rect x="16" y="4" width="3.5" height="14" rx="1.2"/>';
+// Insight categories
+P['cat-sleep'] = '<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z"/><path d="M16 3.5h3l-3 3.5h3"/>';
+P['cat-food'] = '<path d="M12 7c-1.5-2.5-6-2.5-7 1.5-1 4 1.5 9.5 4 11 1 .6 2 .2 3-.5 1 .7 2 1.1 3 .5 2.5-1.5 5-7 4-11-1-4-5.5-4-7-1.5z"/><path d="M12 7c0-2 1-3.5 2.5-4"/>';
+P['cat-activity'] = '<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>';
+P['cat-strength'] = '<path d="M3 9.5v5M6 7v10M18 7v10M21 9.5v5M6 12h12"/>';
+P['cat-weight'] = '<rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M8.5 9.5a5 5 0 0 1 7 0L13 12"/>';
+P['cat-consistency'] = '<rect x="3.5" y="5" width="17" height="15.5" rx="3.5"/><path d="M3.5 9.5h17M8 3v4M16 3v4M9 14.5l2 2 4-4"/>';
+P.sparkle = '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6zM18.5 15l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/>';
+
+/** Tab icon: filled when active, outline otherwise. */
+export function tabIcon(name, active) {
+  const paths = active ? FILLED[name] : name === 'trends' ? P.trendsOutline : P[name];
+  return `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+    stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths || ''}</svg>`;
+}
+
 export function icon(name, cls = '') {
   return `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
     stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || ''}</svg>`;
@@ -85,14 +109,25 @@ export function parseNum(v) {
 /* ---------- Toast ---------- */
 
 let toastTimer;
-export function toast(msg, { iconHTML = icon('check'), duration = 2200, big = false } = {}) {
+/**
+ * Pill toast at the top. Optional action (e.g. undo): { label, onClick }.
+ */
+export function toast(msg, { iconHTML = icon('check'), duration = 2200, big = false, action = null } = {}) {
   const el = document.getElementById('toast');
   if (!el) return;
-  el.innerHTML = `${iconHTML}<span>${esc(msg)}</span>`;
+  el.innerHTML = `<span class="toast-ic">${iconHTML}</span><span class="toast-msg">${esc(msg)}</span>${
+    action ? `<button type="button" class="toast-action press">${esc(action.label)}</button>` : ''}`;
   el.classList.toggle('big', big);
+  el.classList.toggle('has-action', !!action);
   el.classList.add('show');
+  if (action) {
+    el.querySelector('.toast-action').onclick = () => {
+      el.classList.remove('show');
+      action.onClick();
+    };
+  }
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+  toastTimer = setTimeout(() => el.classList.remove('show'), action ? Math.max(duration, 4000) : duration);
 }
 
 // Sequential toasts (e.g. several badges unlocked at once) so none overwrites another.
@@ -161,6 +196,29 @@ export function openSheet({ title, body = '', actions = [], onOpen }) {
       if (r === false) return;
       close(r === undefined ? (a.value ?? null) : r);
     });
+    // Swipe down on the handle/title to dismiss
+    const sheetEl = wrap.querySelector('.sheet');
+    let y0 = null, dy = 0;
+    sheetEl.addEventListener('pointerdown', (e) => {
+      if (!e.target.closest('.sheet-handle, .sheet-title') || e.button > 0) return;
+      y0 = e.clientY; dy = 0;
+      sheetEl.setPointerCapture?.(e.pointerId);
+      sheetEl.classList.add('dragging');
+    });
+    sheetEl.addEventListener('pointermove', (e) => {
+      if (y0 === null) return;
+      dy = Math.max(0, e.clientY - y0);
+      sheetEl.style.transform = `translateY(${dy}px)`;
+    });
+    const endDrag = () => {
+      if (y0 === null) return;
+      y0 = null;
+      sheetEl.classList.remove('dragging');
+      sheetEl.style.transform = '';
+      if (dy > 90) close(null);
+    };
+    sheetEl.addEventListener('pointerup', endDrag);
+    sheetEl.addEventListener('pointercancel', endDrag);
     // Enter inside a single-line input submits with the primary action
     wrap.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && e.target.matches('input:not([type=checkbox])')) {
@@ -200,12 +258,86 @@ export function invalid(input, msg) {
 
 /* ---------- Feedback ---------- */
 
-export function vibrate(pattern = 30) {
+/** Haptic presets: completing a set/item, reaching a target, records / level-ups. */
+export const HAPTIC = { item: 10, target: 20, record: [30, 50, 30, 50, 80] };
+
+export function vibrate(pattern = HAPTIC.item) {
   try {
+    // Browsers block vibration before the first user gesture (and log an error) — skip then.
+    if (navigator.userActivation && !navigator.userActivation.hasBeenActive) return;
     if (navigator.vibrate) navigator.vibrate(pattern);
   } catch {
     /* unsupported */
   }
+}
+
+export const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+/** Count numbers up to their value: elements with data-count="1234" (and optional data-dec). */
+export function countUp(root) {
+  const els = root.querySelectorAll('[data-count]');
+  if (!els.length) return;
+  if (reducedMotion()) return;
+  const start = performance.now();
+  const dur = 700;
+  const items = [...els].map((el) => ({ el, to: Number(el.dataset.count), dec: Number(el.dataset.dec || 0) }));
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / dur);
+    const e = 1 - Math.pow(1 - t, 3);
+    for (const { el, to, dec } of items) {
+      if (!el.isConnected) continue;
+      el.textContent = (to * e).toLocaleString('he-IL', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    }
+    if (t < 1) requestAnimationFrame(step);
+  };
+  for (const { el, dec } of items) el.textContent = (0).toLocaleString('he-IL', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+  requestAnimationFrame(step);
+}
+
+/** Short (≤ 1.2 s) confetti burst built from CSS pieces. */
+export function confetti(origin = { x: 0.5, y: 0.35 }) {
+  if (reducedMotion()) return;
+  const colors = ['var(--accent)', 'var(--steps)', 'var(--protein)', 'var(--sleep)', 'var(--water)', 'var(--success)'];
+  const box = document.createElement('div');
+  box.className = 'confetti';
+  box.setAttribute('aria-hidden', 'true');
+  box.style.left = `${origin.x * 100}%`;
+  box.style.top = `${origin.y * 100}%`;
+  let html = '';
+  for (let i = 0; i < 28; i++) {
+    const a = (i / 28) * Math.PI * 2 + (i % 3) * 0.2;
+    const dist = 90 + ((i * 37) % 80);
+    html += `<i style="--dx:${Math.cos(a) * dist}px;--dy:${Math.sin(a) * dist - 40}px;--r:${(i * 47) % 360}deg;
+      background:${colors[i % colors.length]};${i % 2 ? 'border-radius:50%;' : ''}animation-delay:${(i % 4) * 20}ms"></i>`;
+  }
+  box.innerHTML = html;
+  document.body.appendChild(box);
+  setTimeout(() => box.remove(), 1200);
+}
+
+/* ---------- Empty states & skeletons ---------- */
+
+const ART = {
+  insights: '<circle cx="40" cy="34" r="16"/><path d="M33 52h14M35 58h10M40 10v6M18 34h-6M68 34h-6M24 18l4 4M56 18l-4 4"/>',
+  food: '<path d="M14 44h52a26 26 0 0 1-52 0z"/><path d="M28 30c0-6 6-6 6-12M40 30c0-6 6-6 6-12M52 30c0-6 6-6 6-12"/>',
+  weight: '<rect x="14" y="14" width="52" height="52" rx="14"/><path d="M28 32a17 17 0 0 1 24 0L44 41"/><circle cx="40" cy="44" r="3"/>',
+  dumbbell: '<path d="M12 32v16M20 24v32M60 24v32M68 32v16M20 40h40"/>',
+  trophy: '<path d="M26 14h28v18a14 14 0 0 1-28 0z"/><path d="M26 20H16c0 9 5 14 12 14M54 20h10c0 9-5 14-12 14M40 46v10M30 66h20M33 56h14"/>',
+  search: '<circle cx="36" cy="36" r="18"/><path d="M50 50l14 14M28 36h16"/>',
+};
+
+/** Small line illustration + one sentence + optional action button HTML. */
+export function emptyState(art, text, actionHTML = '') {
+  return `<div class="empty-state">
+    <svg class="empty-art" viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="2.5"
+      stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ART[art] || ART.insights}</svg>
+    <p>${esc(text)}</p>${actionHTML}
+  </div>`;
+}
+
+/** Shimmer placeholder rows. */
+export function skeleton(rows = 3) {
+  return `<div class="skeleton" aria-busy="true" aria-label="טוען">${'<div class="sk-row"><i></i><i></i></div>'.repeat(rows)}</div>`;
 }
 
 let audioCtx;

@@ -1,5 +1,5 @@
 // Service worker: cache-first for app files and the Heebo font. Versioned cache; old caches removed.
-const CACHE_VERSION = '1.4.0';
+const CACHE_VERSION = '1.5.0';
 const CACHE = `seventy-${CACHE_VERSION}`;
 
 const APP_FILES = [
@@ -22,6 +22,7 @@ const APP_FILES = [
   './js/scanner.js',
   './js/progress.js',
   './js/hebrew.js',
+  './js/insights.js',
   './js/heatmap.js',
   './js/badgeArt.js',
   './js/celebrate.js',
@@ -132,8 +133,8 @@ async function staleWhileRevalidate(event, req) {
   const cache = await caches.open(DATA_CACHE);
   const cached = await cache.match(req, { ignoreSearch: true });
   const network = fetch(req)
-    .then((res) => {
-      if (res && res.ok) cache.put(req, res.clone());
+    .then(async (res) => {
+      if (res && res.ok) await cache.put(req, res.clone());
       return res;
     })
     .catch(() => null);

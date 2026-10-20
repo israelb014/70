@@ -2,7 +2,7 @@
 import { getState, getDay, updateDay, upsertPreset, deletePreset } from '../storage.js';
 import { ring } from '../charts.js';
 import {
-  icon, esc, num, parseNum, toast, vibrate, openSheet, confirmDialog, invalid, dateNav, handleDateNav,
+  icon, esc, num, parseNum, toast, vibrate, HAPTIC, emptyState, skeleton, openSheet, confirmDialog, invalid, dateNav, handleDateNav,
 } from '../ui.js';
 import { foodTotals, sortedFood } from '../stats.js';
 import { nowTime } from '../dates.js';
@@ -32,17 +32,18 @@ export function render(root, ctx) {
           </button>`
         )
         .join('')}</div>`
-    : '<p class="muted">אין עדיין ארוחות קבועות. אפשר לשמור ארוחה מההזנה הידנית או מכאן.</p>';
+    : emptyState('food', 'אין עדיין ארוחות קבועות. אפשר לשמור ארוחה מההזנה הידנית.');
 
   const items = sortedFood(day)
     .map(
-      ({ f, i }) => `<li class="list-row swipe" data-swipe="${i}">
+      ({ f, i }) => `<li class="swipe-item"><span class="swipe-bg" aria-hidden="true">${icon('trash')}</span>
+        <div class="list-row swipe" data-swipe="${i}">
         <button type="button" class="time-chip press ${f.time ? '' : 'empty'}" data-action="food-time" data-i="${i}" aria-label="עריכת שעה">
           ${f.time ? `<bdi class="num">${esc(f.time)}</bdi>` : icon('timer')}</button>
         <div class="grow"><strong>${esc(f.name || 'ללא שם')}</strong>
           <div class="muted small">${amountText(f)}${num(f.kcal || 0)} קק״ל · <span class="protein-txt">${num(f.protein || 0)} ג׳ חלבון</span></div></div>
         <button type="button" class="icon-btn sm press danger-ic" data-action="food-del" data-i="${i}" aria-label="מחיקה">${icon('trash')}</button>
-      </li>`
+      </div></li>`
     )
     .join('');
 
@@ -56,7 +57,7 @@ export function render(root, ctx) {
       </div>
       <div class="search-results" data-results hidden></div>
     </section>
-    <section class="card totals">
+    <section class="card totals role-protein">
       ${ring({
         id: 'protein', size: 150, stroke: 14, frac: target ? t.protein / target : 0,
         color: target && t.protein >= target ? 'var(--success)' : 'var(--protein)',
@@ -69,13 +70,13 @@ export function render(root, ctx) {
       </div>
     </section>
 
-    <section class="card">
+    <section class="card role-accent">
       <div class="card-head">${icon('bolt', 'head-ic')}<h2>ארוחות קבועות</h2>
         <button type="button" class="icon-btn sm press" data-action="presets-manage" aria-label="ניהול ארוחות קבועות">${icon('settings')}</button></div>
       ${grid}
     </section>
 
-    <section class="card">
+    <section class="card role-accent">
       <div class="card-head">${icon('plus', 'head-ic')}<h2>הזנה ידנית</h2></div>
       <label class="field"><span>שם</span><input type="text" maxlength="40" data-f="name" autocomplete="off"></label>
       <div class="field-grid">
@@ -86,9 +87,9 @@ export function render(root, ctx) {
       <button type="button" class="btn primary block press" data-action="food-add">${icon('plus')}<span>הוספה</span></button>
     </section>
 
-    <section class="card">
+    <section class="card role-protein">
       <div class="card-head">${icon('list', 'head-ic')}<h2>מה אכלתי</h2><span class="muted small">${num(day.food.length)} פריטים</span></div>
-      ${items ? `<ul class="list">${items}</ul><p class="hint">הקשה על השעה לעריכה · החלקה הצידה למחיקה</p>` : '<p class="muted">עדיין לא נוספו פריטים ביום הזה.</p>'}
+      ${items ? `<ul class="list">${items}</ul><p class="hint">הקשה על השעה לעריכה · החלקה הצידה למחיקה</p>` : emptyState('food', 'עדיין לא נוספו פריטים ביום הזה. אפשר לחפש מזון למעלה.')}
     </section>
     <button type="button" class="btn secondary block press" data-action="copy-daily">${icon('copy')}<span>העתק סיכום יומי</span></button>`;
 
@@ -143,7 +144,7 @@ async function updateResults(root, query) {
   let db;
   try {
     const pending = loadFoodDb();
-    if (!box.innerHTML) box.innerHTML = '<p class="muted small">טוען מאגר מזון…</p>';
+    if (!box.innerHTML) box.innerHTML = skeleton(4);
     db = await pending;
   } catch {
     db = []; // DB unavailable (first load offline) — own products still searchable
@@ -155,9 +156,9 @@ async function updateResults(root, query) {
   box.innerHTML = `
     ${own.length ? section('המוצרים שלי', own) : ''}
     ${hits.length ? section('מהמאגר', hits) : ''}
-    ${!own.length && !hits.length ? `<p class="muted small">לא נמצא במאגר${db.length ? '' : ' (המאגר ייטען כשיהיה חיבור)'}.</p>` : ''}
+    ${!own.length && !hits.length ? emptyState('search', `לא נמצא במאגר${db.length ? '' : ' (המאגר ייטען כשיהיה חיבור)'}. אפשר להוסיף אותו בעצמך למטה.`) : ''}
     <div data-off-section ${online ? '' : 'hidden'}>
-      <div class="res-section"><div class="res-title">מוצרים מהרשת <span class="spinner" aria-label="טוען"></span></div></div>
+      <div class="res-section"><div class="res-title">מוצרים מהרשת <span class="spinner" aria-label="טוען"></span></div>${skeleton(2)}</div>
     </div>
     <button type="button" class="food-result add-row press" data-action="food-new">
       ${icon('plus', 'add-ic')}<span class="grow"><strong>לא מצאת? הוסף מאכל</strong>
@@ -214,7 +215,7 @@ async function onClick(e, ctx) {
       const p = getState().mealPresets.find((m) => m.id === b.dataset.id);
       if (!p) return;
       updateDay(k, (d) => d.food.push({ name: p.name, grams: null, kcal: p.kcal || 0, protein: p.protein || 0, source: 'preset', time: nowTime() }));
-      vibrate(20);
+      vibrate(HAPTIC.item);
       toast(`${p.name} נוסף`);
       return ctx.rerender();
     }
@@ -229,7 +230,7 @@ async function onClick(e, ctx) {
       const item = { name: name || 'ללא שם', kcal: Math.max(0, kcal || 0), protein: Math.max(0, protein || 0) };
       updateDay(k, (d) => d.food.push({ ...item, grams: null, source: 'manual', time: nowTime() }));
       if (q('save').checked) upsertPreset({ ...item });
-      vibrate(20);
+      vibrate(HAPTIC.item);
       toast('נוסף');
       return ctx.rerender();
     }
@@ -274,10 +275,20 @@ async function onClick(e, ctx) {
 }
 
 function removeFood(ctx, i) {
-  const item = getDay(ctx.date).food[i];
+  const k = ctx.date;
+  const item = getDay(k).food[i];
   if (!item) return;
-  updateDay(ctx.date, (d) => d.food.splice(i, 1));
-  toast(`${item.name} הוסר`);
+  updateDay(k, (d) => d.food.splice(i, 1));
+  toast(`${item.name} הוסר`, {
+    iconHTML: icon('trash'),
+    action: {
+      label: 'ביטול',
+      onClick: () => {
+        updateDay(k, (d) => d.food.splice(Math.min(i, d.food.length), 0, item));
+        ctx.rerender();
+      },
+    },
+  });
   ctx.rerender();
 }
 
@@ -306,7 +317,7 @@ function bindSwipe(root, ctx) {
       x0 = null;
       if (horizontal && Math.abs(dx) > 110) {
         row.classList.add('swiped');
-        vibrate(20);
+        vibrate(HAPTIC.item);
         setTimeout(() => removeFood(ctx, Number(row.dataset.swipe)), 160);
       } else {
         row.style.transform = '';

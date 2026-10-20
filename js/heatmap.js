@@ -5,7 +5,7 @@ import { dayScore, walkHistory } from './progress.js';
 import { isDayActive, foodTotals } from './stats.js';
 import { num, esc, icon } from './ui.js';
 
-const CELL = 14, GAP = 3, STEP = CELL + GAP, TOP = 18;
+const CELL = 14, GAP = 2, STEP = CELL + GAP, TOP = 18;
 const DAY_INITIALS = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
 const monthFmt = new Intl.DateTimeFormat('he-IL', { month: 'short' });
 
@@ -82,8 +82,10 @@ export function heatmapCard() {
 export function bindHeatmap(root, onOpenDay) {
   const scroller = root.querySelector('[data-hm-scroll]');
   if (!scroller) return;
-  // RTL scroller: newest days are at the far left end.
+  // RTL scroller: newest days are at the far left end. Jump there instantly (no smooth scroll).
+  scroller.style.scrollBehavior = 'auto';
   scroller.scrollLeft = -scroller.scrollWidth;
+  scroller.style.scrollBehavior = '';
   const tip = root.querySelector('[data-hm-tip]');
   const wrap = root.querySelector('.hm-wrap');
 

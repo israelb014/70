@@ -1,7 +1,7 @@
 // Food sheets shared by the "אוכל" tab and settings:
 // amount picker (DB / own products / barcode hits), product form, and the scan → lookup flow.
 import { getState, updateDay, upsertPreset, upsertCustomFood, rememberFood } from './storage.js';
-import { icon, esc, num, parseNum, toast, vibrate, openSheet, invalid } from './ui.js';
+import { icon, esc, num, parseNum, toast, vibrate, openSheet, invalid, HAPTIC } from './ui.js';
 import { fromCustom, lookupBarcode } from './foods.js';
 import { nowTime } from './dates.js';
 import { openScanner } from './scanner.js';
@@ -111,7 +111,7 @@ export async function openAmountSheet(dayKey, food, { editableName = false, sour
   rememberFood(food.key, res.amount, units[unitIdx].l);
   if (food.id && res.name !== food.name) upsertCustomFood({ id: food.id, name: res.name });
   if (res.preset) upsertPreset({ name: res.name, kcal, protein });
-  vibrate(20);
+  vibrate(HAPTIC.item);
   toast(`${res.name} נוסף`);
   return true;
 }
@@ -209,7 +209,7 @@ export async function addCustomFlow(dayKey, partial = {}, message = '') {
     d.food.push({ name: saved.name, grams: res.amount, kcal, protein, source: partial.barcode ? 'barcode' : 'custom', time: nowTime(), amount: res.amount, unit: 'גרם' })
   );
   rememberFood(food.key, res.amount, 'גרם');
-  vibrate(20);
+  vibrate(HAPTIC.item);
   toast(`${saved.name} נשמר ונוסף`);
   return true;
 }

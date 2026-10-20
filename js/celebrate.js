@@ -1,5 +1,5 @@
 // Full-screen level-up celebration (animation is disabled by the global prefers-reduced-motion rule).
-import { icon, vibrate } from './ui.js';
+import { icon, vibrate, HAPTIC, confetti } from './ui.js';
 
 export function celebrateLevel(level) {
   return new Promise((resolve) => {
@@ -28,7 +28,8 @@ export function celebrateLevel(level) {
     document.body.appendChild(el);
     document.body.classList.add('no-scroll');
     requestAnimationFrame(() => el.classList.add('open'));
-    vibrate([60, 60, 120]);
+    vibrate(HAPTIC.record);
+    setTimeout(() => confetti({ x: 0.5, y: 0.4 }), 250);
     const close = () => {
       el.classList.remove('open');
       setTimeout(() => {

@@ -1,5 +1,5 @@
 // Full-screen barcode scanner: rear camera + native BarcodeDetector, with manual entry fallback.
-import { icon, esc, vibrate } from './ui.js';
+import { icon, esc, vibrate, HAPTIC } from './ui.js';
 
 const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
 const VALID = /^\d{6,14}$/;
@@ -135,7 +135,7 @@ export function openScanner() {
           const codes = await detector.detect(video);
           const hit = codes.find((c) => VALID.test(c.rawValue));
           if (hit) {
-            vibrate(60);
+            vibrate(HAPTIC.item);
             el.classList.add('found');
             msg.innerHTML = `נמצא: <bdi class="num">${esc(hit.rawValue)}</bdi>`;
             setTimeout(() => close(hit.rawValue), 250);

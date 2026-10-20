@@ -1,7 +1,8 @@
 // "מגמות" tab: weight progress + chart, 7-day steps and protein, personal records, weekly summary.
 import { getState, getDay, addWeight, deleteWeight } from '../storage.js';
-import { ring, barChart, weightChart } from '../charts.js';
-import { icon, esc, num, parseNum, toast, openSheet, confirmDialog, invalid } from '../ui.js';
+import { ring, barChart, weightChart, bindChartTips } from '../charts.js';
+import { icon, esc, num, parseNum, toast, openSheet, confirmDialog, invalid, emptyState } from '../ui.js';
+import { weekInsights } from '../insights.js';
 import { lastNDays, todayKey, shortDate } from '../dates.js';
 import { computeRecords, foodTotals, waterMl } from '../stats.js';
 import { weeklySummary, copyText } from '../export.js';
@@ -16,17 +17,18 @@ export function render(root, ctx) {
 
   root.innerHTML = `
     <header class="page-head"><span class="eyebrow">70</span><h1>מגמות</h1></header>
+    ${insightsSection()}
     ${heatmapCard()}
     ${achievementsCard()}
     ${weightCard(st, weights)}
-    <section class="card">
+    <section class="card role-steps">
       <div class="card-head">${icon('steps', 'head-ic')}<h2>צעדים · 7 ימים</h2></div>
-      ${barChart({ keys, values: keys.map((k) => getDay(k).steps || 0), target: st.stepsTarget })}
+      ${barChart({ keys, values: keys.map((k) => getDay(k).steps || 0), target: st.stepsTarget, color: 'var(--steps)', unit: 'צעדים' })}
       <p class="legend"><span class="lg-line"></span>יעד ${num(st.stepsTarget || 0)}</p>
     </section>
-    <section class="card">
+    <section class="card role-protein">
       <div class="card-head">${icon('food', 'head-ic')}<h2>חלבון · 7 ימים</h2></div>
-      ${barChart({ keys, values: keys.map((k) => foodTotals(k).protein), target: st.proteinTarget, color: 'var(--protein)' })}
+      ${barChart({ keys, values: keys.map((k) => foodTotals(k).protein), target: st.proteinTarget, color: 'var(--protein)', unit: 'ג׳' })}
       <p class="legend"><span class="lg-line"></span>יעד ${num(st.proteinTarget || 0)} ג׳</p>
     </section>
     ${sleepTrendCard(st, keys)}
@@ -36,10 +38,24 @@ export function render(root, ctx) {
 
   root.onclick = (e) => onClick(e, ctx);
   root.onchange = null;
+  bindChartTips(root);
   bindHeatmap(root, (k) => {
     ctx.date = k;
     ctx.goTab('today');
   });
+}
+
+/* ---------- Insights ---------- */
+
+function insightsSection() {
+  const list = weekInsights();
+  return `<section class="card insights-week role-accent">
+    <div class="card-head">${icon('sparkle', 'head-ic')}<h2>תובנות</h2><span class="muted small">7 הימים האחרונים</span></div>
+    ${list.length
+      ? `<ul class="insight-list">${list.map((x) => `<li class="insight kind-${x.kind}">
+          <span class="insight-ic">${icon(`cat-${x.cat}`)}</span><p>${esc(x.text)}</p></li>`).join('')}</ul>`
+      : emptyState('insights', 'עוד כמה ימים של נתונים ונתחיל להציג תובנות')}
+  </section>`;
 }
 
 function achievementsCard() {
@@ -50,9 +66,9 @@ function achievementsCard() {
     ${ring({ id: 'level-trends', size: 76, stroke: 8, frac: L.frac, inner: `<div class="ring-mid">${num(L.level)}</div>` })}
     <div class="grow">
       <h2>הישגים · רמה ${num(L.level)}</h2>
-      <div class="muted small">${num(L.xp)} XP · עוד ${num(L.toNext)} לרמה הבאה · ${num(weekXP())} ב-7 ימים</div>
+      <div class="muted small"><span class="nw">${num(L.xp)} נקודות</span> · <span class="nw">עוד ${num(L.toNext)} לרמה הבאה</span></div>
       <div class="ach-medals">${earned.slice(0, 5).map((b) => medallion(b, true, 30)).join('') || '<span class="muted small">עוד אין תגים</span>'}
-        <span class="muted small">${num(earned.length)}/${num(badges.length)}</span></div>
+        <span class="muted small">${num(`${earned.length}/${badges.length}`)}</span></div>
     </div>
     ${icon('chevL')}
   </button>`;
@@ -64,13 +80,13 @@ function waterTrendCard(st, keys) {
   const logged = liters.filter((l) => l > 0);
   const avg = logged.length ? logged.reduce((a, b) => a + b, 0) / logged.length : 0;
   const f2 = (v) => v.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  return `<section class="card">
+  return `<section class="card role-water">
     <div class="card-head">${icon('drop', 'head-ic')}<h2>מים · 7 ימים</h2></div>
-    ${barChart({ keys, values: liters, target, color: 'var(--protein)', format: (v) => f2(v) })}
+    ${barChart({ keys, values: liters, target, color: 'var(--water)', format: (v) => f2(v), unit: 'ל׳' })}
     <p class="legend"><span class="lg-line"></span>יעד ${num(target, 2)} ל׳</p>
     <div class="hm-stats">
       <div><span class="stat-num">${logged.length ? num(f2(avg)) : '–'}</span><span class="muted small">ממוצע ליטרים ליום</span></div>
-      <div><span class="stat-num">${num(logged.length)}<small>/7</small></span><span class="muted small">ימים עם תיעוד</span></div>
+      <div><span class="stat-num"><bdi class="num">${logged.length}<small>/7</small></bdi></span><span class="muted small">ימים עם תיעוד</span></div>
     </div>
   </section>`;
 }
@@ -81,9 +97,9 @@ function sleepTrendCard(st, keys) {
   const hours = keys.map((k) => sleepMinutes(getDay(k).sleep) / 60);
   const avgMin = logged.length ? logged.reduce((a, s) => a + sleepMinutes(s), 0) / logged.length : 0;
   const avgBed = averageBedtime(logged.map((s) => s.bed));
-  return `<section class="card">
+  return `<section class="card role-sleep">
     <div class="card-head">${icon('bed', 'head-ic')}<h2>שינה · 7 ימים</h2></div>
-    ${barChart({ keys, values: hours, target, color: 'var(--protein)', format: (v) => fmtDuration(v * 60) })}
+    ${barChart({ keys, values: hours, target, color: 'var(--sleep)', format: (v) => fmtDuration(v * 60), unit: 'שעות' })}
     <p class="legend"><span class="lg-line"></span>יעד ${num(target)} שעות</p>
     <div class="hm-stats">
       <div><span class="stat-num">${logged.length ? num(fmtDuration(avgMin)) : '–'}</span><span class="muted small">ממוצע שעות שינה</span></div>
@@ -109,7 +125,7 @@ function weightCard(st, weights) {
         <button type="button" class="icon-btn sm press danger-ic" data-action="weight-del" data-i="${w.i}" aria-label="מחיקת שקילה">${icon('trash')}</button></li>`
     )
     .join('');
-  return `<section class="card">
+  return `<section class="card role-accent">
     <div class="card-head">${icon('scale', 'head-ic')}<h2>משקל</h2></div>
     <div class="row">
       ${ring({
@@ -126,7 +142,7 @@ function weightCard(st, weights) {
     <button type="button" class="btn secondary block press" data-action="weight-add">${icon('plus')}<span>הוספת שקילה</span></button>
     ${weights.length ? `${weightChart(weights, target)}
       <p class="legend"><span class="lg-dot"></span>שקילה <span class="lg-avg"></span>ממוצע שבועי <span class="lg-line"></span>יעד</p>
-      <ul class="list">${recent}</ul>` : '<p class="muted">עוד אין שקילות. הוסיפו שקילה ראשונה כדי לראות גרף.</p>'}
+      <ul class="list">${recent}</ul>` : emptyState('weight', 'עוד אין שקילות. הוסיפו שקילה ראשונה כדי לראות גרף.')}
   </section>`;
 }
 
@@ -142,9 +158,9 @@ function recordsCard() {
       </li>`
     )
     .join('');
-  return `<section class="card">
+  return `<section class="card role-accent">
     <div class="card-head">${icon('trophy', 'head-ic')}<h2>שיאים אישיים</h2></div>
-    ${rows ? `<ul class="list">${rows}</ul>` : '<p class="muted">השיאים יופיעו כאן אוטומטית אחרי שתתחילו לתעד.</p>'}
+    ${rows ? `<ul class="list">${rows}</ul>` : emptyState('trophy', 'השיאים יופיעו כאן אוטומטית אחרי שתתחילו לתעד.')}
   </section>`;
 }
 

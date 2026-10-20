@@ -5,6 +5,7 @@ import { computeRecords, exercisesForDay, foodTotals, floorsOf, dayCompletion, s
 import { fmt } from './ui.js';
 import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES, dayXP } from './progress.js';
 import { int, dec1, dec2, trim, iso, plural, unitAmount } from './hebrew.js';
+import { dayInsights, weekInsights } from './insights.js';
 
 // Right-to-left mark: makes a line that starts with Latin text ("XP …") lay out right-to-left.
 const RLM = '\u200F';
@@ -98,6 +99,9 @@ export function dailySummary(k) {
   const weighins = getState().weights.filter((w) => w.date === k);
   if (weighins.length) sections.push([`שקילה: ${trim(weighins.at(-1).kg, 1)} ק״ג`]);
 
+  const ins = dayInsights(k).slice(0, 4);
+  if (ins.length) sections.push(['תובנות:', ...ins.map((x) => `• ${x.text}`)]);
+
   const xpSec = [`${RLM}XP היום: ${int(dayXP(k) + 5 * weighins.length)} · רמה ${levelInfo().level}`];
   const walk = walkHistory();
   const badges = BADGES.filter((b) => walk.earned[b.id] === k);
@@ -152,6 +156,9 @@ export function weeklySummary() {
     for (const e of events) lines.push(`• ${e.label}: ${fmt(e.value)} ${e.unit} (${shortDate(e.date)})`);
   } else lines.push('• אין שיאים חדשים השבוע');
   lines.push('');
+
+  const wins = weekInsights().slice(0, 6);
+  if (wins.length) lines.push('תובנות השבוע:', ...wins.map((x) => `• ${x.text}`), '');
 
   const walk = walkHistory();
   const newBadges = BADGES.filter((b) => walk.earned[b.id] >= keys[0] && walk.earned[b.id] <= keys[6]);

@@ -1,7 +1,7 @@
 // Entry point: tab routing, shared context and service worker registration.
 import { getState, setSaveErrorHandler, updateMeta } from './storage.js';
 import { todayKey } from './dates.js';
-import { icon, toast, queueToast, bindLongPress } from './ui.js';
+import { icon, tabIcon, toast, queueToast, bindLongPress, countUp, confetti, vibrate, HAPTIC } from './ui.js';
 import { levelInfo, walkHistory, BADGES } from './progress.js';
 import { medallion } from './badgeArt.js';
 import { celebrateLevel } from './celebrate.js';
@@ -37,19 +37,46 @@ const ctx = {
     render();
   },
   goTab: (id) => {
+    const from = tabIndex(ctx.tab);
     if (SCREENS[id] && !SCREENS[ctx.tab]) ctx.prevTab = ctx.tab;
     ctx.tab = id;
     main.classList.remove('settled');
+    // Content fades in and slides 8px in the direction of travel (RTL: higher index = further left).
+    main.style.setProperty('--enter-x', tabIndex(id) >= from ? '-8px' : '8px');
+    main.classList.remove('tab-enter');
+    void main.offsetWidth;
+    main.classList.add('tab-enter');
     render();
     window.scrollTo(0, 0);
   },
 };
 
+const tabIndex = (id) => {
+  const i = TABS.findIndex((t) => t.id === (SCREENS[id] ? ctx.prevTab || 'trends' : id));
+  return i < 0 ? 0 : i;
+};
+
+/** Floating tab bar, built once so the active indicator can slide between tabs. */
 function renderTabbar() {
-  tabbar.innerHTML = TABS.map(
-    (t) => `<button type="button" class="tab ${ctx.tab === t.id ? 'active' : ''}" data-tab="${t.id}"
-      aria-current="${ctx.tab === t.id ? 'page' : 'false'}">${icon(t.icon)}<span>${t.label}</span></button>`
-  ).join('');
+  if (!tabbar.dataset.built) {
+    tabbar.innerHTML = `<span class="tab-indicator" aria-hidden="true"></span>${TABS.map(
+      (t) => `<button type="button" class="tab" data-tab="${t.id}"><span class="tab-ic"></span><span>${t.label}</span></button>`
+    ).join('')}`;
+    tabbar.dataset.built = '1';
+  }
+  const activeId = SCREENS[ctx.tab] ? null : ctx.tab;
+  tabbar.style.setProperty('--i', tabIndex(ctx.tab));
+  tabbar.classList.toggle('no-active', !activeId);
+  for (const t of TABS) {
+    const b = tabbar.querySelector(`[data-tab="${t.id}"]`);
+    const on = t.id === activeId;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-current', on ? 'page' : 'false');
+    if (b.dataset.on !== String(on)) {
+      b.querySelector('.tab-ic').innerHTML = tabIcon(t.icon, on);
+      b.dataset.on = String(on);
+    }
+  }
 }
 
 function render() {
@@ -72,6 +99,7 @@ function render() {
   main.oninput = null;
   main.dataset.tab = ctx.tab;
   (SCREENS[ctx.tab] || TABS.find((t) => t.id === ctx.tab).view).render(main, ctx);
+  if (!main.classList.contains('settled')) countUp(main);
   checkProgress();
 }
 
@@ -96,6 +124,8 @@ function checkProgress() {
   if (fresh.length) {
     updateMeta({ seenBadges: [...meta.seenBadges, ...fresh.map((b) => b.id)] });
     fresh.forEach((b) => queueToast(`תג חדש: ${b.name}`, { iconHTML: medallion(b, true, 40), big: true }));
+    confetti({ x: 0.5, y: 0.08 });
+    vibrate(HAPTIC.record);
   }
   if (level > meta.lastSeenLevel) {
     updateMeta({ lastSeenLevel: level });
@@ -105,7 +135,10 @@ function checkProgress() {
 
 tabbar.addEventListener('click', (e) => {
   const b = e.target.closest('[data-tab]');
-  if (b && b.dataset.tab !== ctx.tab) ctx.goTab(b.dataset.tab);
+  if (b && b.dataset.tab !== ctx.tab) {
+    vibrate(HAPTIC.item);
+    ctx.goTab(b.dataset.tab);
+  }
 });
 
 // Long-press is bound once on the persistent container and dispatched to the active view.
