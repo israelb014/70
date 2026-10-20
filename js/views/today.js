@@ -3,14 +3,16 @@ import { getState, getDay, updateDay, save, exerciseById } from '../storage.js';
 import { ring, concentricRings } from '../charts.js';
 import {
   icon, esc, fmt, num, parseNum, toast, vibrate, openSheet, confirmDialog, invalid,
-  checkMark, dateNav, handleDateNav, HAPTIC, confetti, emptyState,
+  checkMark, dateNav, handleDateNav, HAPTIC, confetti, emptyState, bindSwipe,
 } from '../ui.js';
 import {
   dayCompletion, currentStreak, exercisesForDay, exerciseProgress, computeRecords, recordIdsOn,
   longestRideKm, floorsOf,
 } from '../stats.js';
 import { runTimer } from '../timer.js';
-import { levelInfo, sleepMinutes, fmtDuration, lastSleep } from '../progress.js';
+import {
+  levelInfo, sleepMinutes, fmtDuration, lastSleep, durText, napMinutes, napsMinutes, totalSleepMinutes, hasSleep, sortedNaps, lastNap, napError,
+} from '../progress.js';
 import { waterMl } from '../stats.js';
 import { nowTime } from '../dates.js';
 import { dailySummary, copyText, exportBackup, canShareBackup, shareBackup, backupReminder, snoozeBackupReminder } from '../export.js';
@@ -54,6 +56,10 @@ export function render(root, ctx) {
   }
   ctx.justCompleted.clear();
 
+  bindSwipe(root, '[data-nap-i]', (row) => removeNap(ctx, k, Number(row.dataset.napI)));
+  root.onkeydown = (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-nap-i]')) { e.preventDefault(); e.target.click(); }
+  };
   root.onclick = (e) => onClick(e, ctx);
   root.onchange = (e) => onChange(e, ctx);
   root.oninput = (e) => {
@@ -116,31 +122,103 @@ function levelChip() {
   </button>`;
 }
 
+/** durText with the number isolated LTR ("1:20" must not flip inside RTL text). */
+const durHTML = (m) => esc(durText(m)).replace(/[\d:]+/, (d) => `<bdi class="num">${d}</bdi>`);
+
 function sleepCard(day, st) {
   const target = st.sleepTarget || 8;
   const s = day.sleep;
   const pre = s || lastSleep() || { bed: '23:00', wake: '07:00' };
   const min = s ? sleepMinutes(s) : 0;
+  const naps = sortedNaps(day);
+  const total = totalSleepMinutes(day); // the ring shows night + naps
   return `<section class="card role-sleep">
-    <div class="card-head">${icon('bed', 'head-ic')}<h2>שינה</h2>
-      ${s ? `<button type="button" class="icon-btn sm press danger-ic" data-action="sleep-del" aria-label="מחיקת שינה">${icon('trash')}</button>` : ''}</div>
+    <div class="card-head">${icon('bed', 'head-ic')}<h2>שינה</h2></div>
     <div class="row">
       ${ring({
-        id: 'sleep', size: 108, stroke: 11, frac: min / (target * 60),
-        color: min >= target * 60 ? 'var(--success)' : 'var(--sleep)',
-        inner: `<div class="ring-mid">${num(fmtDuration(min))}</div><div class="muted xs">שעות</div>`,
+        id: 'sleep', size: 108, stroke: 11, frac: total / (target * 60),
+        color: total >= target * 60 ? 'var(--success)' : 'var(--sleep)',
+        inner: `<div class="ring-mid">${num(fmtDuration(total))}</div><div class="muted xs">שעות</div>`,
       })}
       <div class="grow">
         <div class="stat-num">${s ? num(fmtDuration(min)) : '–'}<small> שעות</small></div>
         <div class="muted small" data-sleep-preview>${s ? '' : 'עוד לא נרשם · '}משך ${num(fmtDuration(sleepMinutes(pre)))} · יעד ${num(target)} שעות</div>
+        ${hasSleep(day) ? `<div class="sleep-tot">${naps.length ? `<span data-naps-total>תנומות: ${durHTML(napsMinutes(day))}</span>` : ''}
+          <b data-sleep-total>סה״כ שינה: ${durHTML(total)}</b></div>` : ''}
       </div>
     </div>
+    <div class="sub-head"><span>שינת לילה</span>
+      ${s ? '<button type="button" class="link-btn press" data-action="sleep-del">ניקוי</button>' : ''}</div>
     <div class="field-grid">
       ${timeField({ value: pre.bed, action: 'pick-sleep', attrs: `data-sleep="bed" data-value="${pre.bed}"`, label: 'הלכתי לישון' })}
       ${timeField({ value: pre.wake, action: 'pick-sleep', attrs: `data-sleep="wake" data-value="${pre.wake}"`, label: 'קמתי' })}
     </div>
     <button type="button" class="btn secondary block press" data-action="sleep-save">${icon('check')}<span>${s ? 'עדכון שינה' : 'שמירת שינה'}</span></button>
+    ${naps.length ? `<ul class="nap-list">${naps.map(({ n, i }) => `<li class="swipe-item"><span class="swipe-bg" aria-hidden="true">${icon('trash')}</span>
+      <div class="list-row swipe nap-row press" role="button" tabindex="0" data-action="nap-edit" data-nap-i="${i}" aria-label="עריכת תנומה ${n.start}–${n.end}">
+        ${icon('moon')}<span class="grow">תנומה · <bdi class="num">${n.start}–${n.end}</bdi> · ${durHTML(napMinutes(n))}</span>
+      </div></li>`).join('')}</ul>` : ''}
+    <button type="button" class="btn ghost block press" data-action="nap-new">${icon('plus')}<span>תנומה</span></button>
   </section>`;
+}
+
+/**
+ * Nap sheet (add / edit): "נרדמתי" / "קמתי" on the 24-hour picker (5-minute steps).
+ * Validation runs live; "שמירה" stays disabled while the message is shown.
+ * Resolves { start, end }, 'delete', or null.
+ */
+function napSheet(k, index = null) {
+  const nap = index !== null ? getDay(k).naps[index] : null;
+  const pre = nap || lastNap() || { start: '14:00', end: '15:00' };
+  const actions = [];
+  if (nap) actions.push({ label: 'מחיקה', kind: 'danger', value: 'delete' });
+  actions.push({
+    label: 'שמירה', kind: 'primary',
+    onClick: (w) => {
+      const v = read(w);
+      return napError(k, v, index ?? -1) ? false : v;
+    },
+  });
+  const read = (w) => ({ start: w.querySelector('[data-nap=start]').dataset.value, end: w.querySelector('[data-nap=end]').dataset.value });
+  const check = (w) => {
+    const v = read(w);
+    const err = napError(k, v, index ?? -1);
+    w.querySelector('[data-nap-err]').textContent = err || `משך ${durText(Math.max(0, napMinutes(v)))}`;
+    w.querySelector('[data-nap-err]').classList.toggle('bad', !!err);
+    w.querySelector('.btn.primary').disabled = !!err;
+  };
+  return openSheet({
+    title: nap ? 'עריכת תנומה' : 'תנומה',
+    body: `<div class="field-grid">
+        ${timeField({ value: pre.start, action: 'nap-pick', attrs: `data-nap="start" data-value="${pre.start}"`, label: 'נרדמתי' })}
+        ${timeField({ value: pre.end, action: 'nap-pick', attrs: `data-nap="end" data-value="${pre.end}"`, label: 'קמתי' })}
+      </div>
+      <p class="nap-msg" data-nap-err role="status" aria-live="polite"></p>`,
+    actions,
+    onOpen: (w) => {
+      check(w);
+      w.querySelectorAll('[data-nap]').forEach((b) => b.addEventListener('click', async () => {
+        const v = await openTimePicker({ value: b.dataset.value, step: 5, title: b.dataset.nap === 'start' ? 'נרדמתי' : 'קמתי' });
+        if (!v) return;
+        b.dataset.value = v;
+        b.querySelector('.time-field-val').textContent = v;
+        b.setAttribute('aria-label', `${b.querySelector('.time-field-lbl').textContent}: ${v}`);
+        check(w);
+      }));
+    },
+  });
+}
+
+/** Remove a nap with an undo toast that puts it back. */
+function removeNap(ctx, k, i) {
+  const removed = getDay(k).naps[i];
+  if (!removed) return;
+  updateDay(k, (d) => d.naps.splice(i, 1));
+  toast('התנומה נמחקה', {
+    iconHTML: icon('trash'),
+    action: { label: 'ביטול', onClick: () => { updateDay(k, (d) => { d.naps.push(removed); d.naps.sort((a, b) => a.start.localeCompare(b.start)); }); ctx.rerender(); } },
+  });
+  ctx.rerender();
 }
 
 // Quick-add amounts (ml)
@@ -674,9 +752,31 @@ async function onClick(e, ctx) {
       toast(ok ? 'הסיכום היומי הועתק' : 'ההעתקה נכשלה');
       return;
     }
-    case 'sleep-del':
+    case 'sleep-del': {
+      const prev = getDay(k).sleep;
       updateDay(k, (d) => (d.sleep = null));
+      toast('שינת הלילה נוקתה', {
+        iconHTML: icon('trash'),
+        action: { label: 'ביטול', onClick: () => { updateDay(k, (d) => (d.sleep = prev)); ctx.rerender(); } },
+      });
       return rerender();
+    }
+    case 'nap-new':
+    case 'nap-edit': {
+      const i = a === 'nap-edit' ? Number(b.dataset.napI) : null;
+      const res = await napSheet(k, i);
+      if (!res) return;
+      if (res === 'delete') return removeNap(ctx, k, i);
+      updateDay(k, (d) => {
+        d.naps ||= [];
+        if (i !== null) d.naps[i] = res;
+        else d.naps.push(res);
+        d.naps.sort((x, y) => x.start.localeCompare(y.start));
+      });
+      vibrate(HAPTIC.item);
+      toast(`נשמרה תנומה של ${durText(napMinutes(res))}`);
+      return rerender();
+    }
     case 'rest':
       updateDay(k, (d) => (d.rest = !d.rest));
       if (getDay(k).rest) vibrate(HAPTIC.item);

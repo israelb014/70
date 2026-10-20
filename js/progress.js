@@ -4,6 +4,7 @@
 import { getState, getDay, exerciseById } from './storage.js';
 import { todayKey, addDays, lastNDays } from './dates.js';
 import { exerciseProgress, dayCompletion, isDayActive, foodTotals } from './stats.js';
+import { plural } from './hebrew.js';
 
 /* ---------- Sleep ---------- */
 
@@ -35,8 +36,49 @@ export function averageBedtime(beds) {
   return `${String(Math.floor(avg / 60)).padStart(2, '0')}:${String(avg % 60).padStart(2, '0')}`;
 }
 
+/** "40 דקות" / "שעה אחת" / "2 שעות" / "1:20 שעות" */
+export function durText(min) {
+  const m = Math.round(min);
+  if (m < 60) return plural(m, 'דקה אחת', 'דקות');
+  if (m % 60 === 0) return plural(m / 60, 'שעה אחת', 'שעות');
+  return `${fmtDuration(m)} שעות`;
+}
+
+/* Naps: days[k].naps = [{ start, end }] within one calendar day (end > start, no midnight crossing). */
+export const napMinutes = (n) => toMin(n.end) - toMin(n.start);
+export const napsMinutes = (day) => (day?.naps || []).reduce((a, n) => a + napMinutes(n), 0);
+/** Night sleep + naps. */
+export const totalSleepMinutes = (day) => sleepMinutes(day?.sleep) + napsMinutes(day);
+/** Night sleep or at least one nap logged. */
+export const hasSleep = (day) => !!day?.sleep || !!day?.naps?.length;
+/** Naps with their stored index, sorted by start time. */
+export const sortedNaps = (day) => (day?.naps || []).map((n, i) => ({ n, i })).sort((a, b) => a.n.start.localeCompare(b.n.start));
+
+/** Most recent nap in history (latest day, latest start), for prefilling the nap sheet. */
+export function lastNap() {
+  const days = getState().days;
+  const k = Object.keys(days).filter((d) => days[d].naps?.length).sort().pop();
+  return k ? sortedNaps(days[k]).pop().n : null;
+}
+
+/**
+ * Validation for a nap on day k (Hebrew message, or null when valid). `skip` = index being edited.
+ * Night sleep of day k ends on k (wake); the next day's night starts on k when it crosses midnight.
+ */
+export function napError(k, nap, skip = -1) {
+  const s = toMin(nap.start), e = toMin(nap.end);
+  if (e < s) return 'תנומה לא יכולה לעבור את חצות';
+  if (e - s < 5) return 'תנומה קצרה מדי';
+  const day = getDay(k);
+  if ((day.naps || []).some((n, i) => i !== skip && s < toMin(n.end) && toMin(n.start) < e)) return 'חופף לתנומה אחרת';
+  if (day.sleep && s < toMin(day.sleep.wake)) return 'חופף לשינת הלילה';
+  const next = getState().days[addDays(k, 1)]?.sleep;
+  if (next && toMin(next.bed) > toMin(next.wake) && e > toMin(next.bed)) return 'חופף לשינת הלילה';
+  return null;
+}
+
 export function sleepTargetMet(day, settings) {
-  return !!day?.sleep && sleepMinutes(day.sleep) >= (settings.sleepTarget || 8) * 60;
+  return hasSleep(day) && totalSleepMinutes(day) >= (settings.sleepTarget || 8) * 60;
 }
 
 /** Most recently logged sleep (for prefilling the pickers). */
@@ -83,7 +125,7 @@ export function dayXP(k) {
   if (st.proteinTarget && foodTotals(k).protein >= st.proteinTarget) xp += 10;
   const comp = dayCompletion(k);
   if (comp.total > 0 && comp.done === comp.total) xp += 20;
-  if (day.sleep) xp += 2;
+  if (hasSleep(day)) xp += 2; // once per day, night or naps
   return xp;
 }
 

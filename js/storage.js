@@ -19,7 +19,7 @@ export function blankState() {
 }
 
 export function blankDay() {
-  return { rest: false, steps: null, climbs: [], rides: [], exercises: {}, food: [], sleep: null, water: [] };
+  return { rest: false, steps: null, climbs: [], rides: [], exercises: {}, food: [], sleep: null, naps: [], water: [] };
 }
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -77,6 +77,10 @@ export function normalize(d) {
         food: Array.isArray(day.food) ? day.food.filter(isObj) : b.food,
         sleep: isObj(day.sleep) && TIME_RE.test(day.sleep.bed) && TIME_RE.test(day.sleep.wake)
           ? { bed: day.sleep.bed, wake: day.sleep.wake } : null,
+        naps: Array.isArray(day.naps)
+          ? day.naps.filter((n) => isObj(n) && TIME_RE.test(n.start) && TIME_RE.test(n.end) && n.end > n.start)
+            .map((n) => ({ start: n.start, end: n.end }))
+          : [],
         water: Array.isArray(day.water)
           ? day.water.filter((w) => isObj(w) && Number(w.ml) > 0)
             .map((w) => ({ ml: Number(w.ml), time: TIME_RE.test(w.time) ? w.time : null }))

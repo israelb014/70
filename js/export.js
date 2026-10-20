@@ -3,7 +3,7 @@ import { getState, getDay, validateBackup, replaceState, updateMeta } from './st
 import { lastNDays, todayKey, shortDate, weekdayName, fullDate } from './dates.js';
 import { computeRecords, exercisesForDay, foodTotals, floorsOf, dayCompletion, completionPct, sortedFood, waterMl } from './stats.js';
 import { fmt } from './ui.js';
-import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES, dayXP } from './progress.js';
+import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES, dayXP, durText, napMinutes, napsMinutes, totalSleepMinutes, sortedNaps } from './progress.js';
 import { int, dec1, dec2, trim, iso, plural, unitAmount } from './hebrew.js';
 import { dayInsights, weekInsights } from './insights.js';
 
@@ -32,6 +32,25 @@ const climbsText = (day) =>
   `${plural(day.climbs.length, 'עלייה אחת', 'עליות')} · ${plural(floorsOf(day), 'קומה אחת', 'קומות')}`;
 
 const sleepText = (sl) => `שינה: ${iso(fmtDuration(sleepMinutes(sl)))} שעות (${iso(`${sl.bed}–${sl.wake}`)})`;
+/** Nap duration ("40 דקות" / "שעה אחת" / "1:20 שעות"); the H:MM form is isolated like the other times. */
+const napDur = (m) => (m >= 60 && m % 60 ? `${iso(fmtDuration(m))} שעות` : durText(m));
+
+/** Daily summary sleep lines: unchanged without naps; with naps: night line (if any), one line per nap, total. */
+function sleepLines(day) {
+  if (!day.naps?.length) return day.sleep ? [sleepText(day.sleep)] : [];
+  return [
+    ...(day.sleep ? [sleepText(day.sleep)] : []),
+    ...sortedNaps(day).map(({ n }) => `תנומה: ${napDur(napMinutes(n))} (${iso(`${n.start}–${n.end}`)})`),
+    `סה״כ שינה: ${iso(fmtDuration(totalSleepMinutes(day)))} שעות`,
+  ];
+}
+
+/** Weekly summary per-day line: "שינה: 8:00 שעות (לילה 7:00 + תנומות 1:00)" when naps exist. */
+function weekSleepLine(day) {
+  if (!day.naps?.length) return day.sleep ? sleepText(day.sleep) : null;
+  const parts = [...(day.sleep ? [`לילה ${iso(fmtDuration(sleepMinutes(day.sleep)))}`] : []), `תנומות ${iso(fmtDuration(napsMinutes(day)))}`];
+  return `שינה: ${iso(fmtDuration(totalSleepMinutes(day)))} שעות (${parts.join(' + ')})`;
+}
 
 /** "9 כוסות" / "כוס אחת" / "1.5 כוסות" — 250 ml per glass, one decimal. */
 const cupsText = (ml) => plural(Math.round((ml / 250) * 10) / 10, 'כוס אחת', 'כוסות', (n) => trim(n, 1));
@@ -75,7 +94,8 @@ export function dailySummary(k) {
   }
   if (act.length) sections.push(['פעילות:', ...act]);
 
-  if (day.sleep) sections.push([sleepText(day.sleep)]);
+  const sl = sleepLines(day);
+  if (sl.length) sections.push(sl);
 
   const ml = waterMl(day);
   if (ml) sections.push([`מים: ${dec2(ml / 1000)} ל׳ / ${trim((st.waterTarget || 2500) / 1000)} ל׳ (${cupsText(ml)})`]);
@@ -132,7 +152,8 @@ export function weeklySummary() {
       const t = exerciseLine(ex, day.exercises[ex.id]);
       if (t) body.push(`${ex.name}: ${t}`);
     }
-    if (day.sleep) body.push(sleepText(day.sleep));
+    const sw = weekSleepLine(day);
+    if (sw) body.push(sw);
     const ml = waterMl(day);
     if (ml) body.push(`מים: ${dec2(ml / 1000)} ל׳ (${cupsText(ml)})`);
     const ft = foodTotals(k);
@@ -247,7 +268,7 @@ const DAY_MS = 86400000;
 
 /** Days that hold any logged data. */
 function dataDayCount() {
-  return Object.values(getState().days).filter((d) => d && (d.steps || d.rest || d.sleep || d.climbs?.length || d.rides?.length
+  return Object.values(getState().days).filter((d) => d && (d.steps || d.rest || d.sleep || d.naps?.length || d.climbs?.length || d.rides?.length
     || d.food?.length || d.water?.length || Object.keys(d.exercises || {}).length)).length;
 }
 

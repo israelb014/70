@@ -247,6 +247,49 @@ export async function confirmDialog(message, { title = 'אישור', ok = 'אי�
   return r === true;
 }
 
+/**
+ * Horizontal swipe (either direction) past a threshold removes a row: rows matching `selector` slide out,
+ * then onRemove(row) runs. A swipe never also triggers the row's tap action.
+ */
+export function bindSwipe(root, selector, onRemove) {
+  root.querySelectorAll(selector).forEach((row) => {
+    let x0 = null, y0 = 0, dx = 0, horizontal = false;
+    row.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button') && e.target.closest('button') !== row) return;
+      x0 = e.clientX; y0 = e.clientY; dx = 0; horizontal = false;
+    });
+    row.addEventListener('pointermove', (e) => {
+      if (x0 === null) return;
+      dx = e.clientX - x0;
+      if (!horizontal && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(e.clientY - y0)) {
+        horizontal = true;
+        row.setPointerCapture?.(e.pointerId);
+      }
+      if (horizontal) {
+        row.style.transform = `translateX(${dx}px)`;
+        row.style.opacity = String(Math.max(0.2, 1 - Math.abs(dx) / 220));
+      }
+    });
+    const end = () => {
+      if (x0 === null) return;
+      x0 = null;
+      if (horizontal && Math.abs(dx) > 110) {
+        row.classList.add('swiped');
+        vibrate(HAPTIC.item);
+        setTimeout(() => onRemove(row), 160);
+      } else {
+        row.style.transform = '';
+        row.style.opacity = '';
+      }
+    };
+    row.addEventListener('pointerup', end);
+    row.addEventListener('pointercancel', end);
+    row.addEventListener('click', (e) => {
+      if (horizontal) { e.stopPropagation(); e.preventDefault(); }
+    }, true);
+  });
+}
+
 /** Mark invalid input inside a sheet and focus it. Returns false (to keep a sheet open). */
 export function invalid(input, msg) {
   if (input) {

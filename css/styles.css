@@ -30,7 +30,9 @@
   --steps: #ffb020;
   --water: #38bdf8;
   --sleep: #a78bfa;
+  --sleep-light: #d8ccff;
   --success: #4ade80;
+  --success-light: #a7f3c0;
   --danger: #f87171;
   --track: #23272e;
   --empty: #1c2026;
@@ -869,6 +871,18 @@ input[type='time']::-webkit-calendar-picker-indicator { opacity: 0.6; }
   40% { box-shadow: 0 0 0 4px var(--water); }
   100% { box-shadow: 0 0 0 10px transparent; }
 }
+
+/* ---------- Sleep card: night / naps ---------- */
+.sub-head { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); min-height: 32px; margin-bottom: calc(var(--s-2) * -1); }
+.sub-head > span { font: var(--t-caption); font-weight: 700; color: var(--muted); }
+.sleep-tot { display: flex; flex-direction: column; gap: 2px; margin-top: var(--s-1); font: var(--t-caption); color: var(--muted); }
+.sleep-tot b { font: var(--t-body-strong); color: var(--text); white-space: nowrap; }
+.nap-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-2); }
+.nap-row { min-height: 52px; padding-inline: var(--s-3); gap: var(--s-2); cursor: pointer; font: var(--t-body); color: var(--text); }
+.nap-row .ic { color: var(--sleep); width: 20px; height: 20px; }
+.nap-row .grow { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nap-msg { min-height: 24px; margin-top: var(--s-3); font: var(--t-body); color: var(--muted); text-align: center; }
+.nap-msg.bad { color: var(--danger); font-weight: 700; }
 
 /* Narrow phones (360px) */
 @media (max-width: 380px) {

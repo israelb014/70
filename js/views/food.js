@@ -2,7 +2,7 @@
 import { getState, getDay, updateDay, upsertPreset, deletePreset } from '../storage.js';
 import { ring } from '../charts.js';
 import {
-  icon, esc, num, parseNum, toast, vibrate, HAPTIC, emptyState, skeleton, openSheet, confirmDialog, invalid, dateNav, handleDateNav,
+  icon, esc, num, parseNum, toast, vibrate, HAPTIC, emptyState, skeleton, openSheet, confirmDialog, invalid, dateNav, handleDateNav, bindSwipe,
 } from '../ui.js';
 import { foodTotals, sortedFood } from '../stats.js';
 import { nowTime } from '../dates.js';
@@ -98,7 +98,7 @@ export function render(root, ctx) {
   root.oninput = (e) => {
     if (e.target.matches('[data-search]')) updateResults(root, e.target.value);
   };
-  bindSwipe(root, ctx);
+  bindSwipe(root, '[data-swipe]', (row) => removeFood(ctx, Number(row.dataset.swipe)));
 }
 
 /** "2 יחידות (100 ג׳) · " / "150 ג׳ · " / "" for entries without an amount. */
@@ -275,43 +275,6 @@ function removeFood(ctx, i) {
     },
   });
   ctx.rerender();
-}
-
-/** Horizontal swipe (either direction) past a threshold deletes a food row. */
-function bindSwipe(root, ctx) {
-  root.querySelectorAll('[data-swipe]').forEach((row) => {
-    let x0 = null, y0 = 0, dx = 0, horizontal = false;
-    row.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('button')) return;
-      x0 = e.clientX; y0 = e.clientY; dx = 0; horizontal = false;
-    });
-    row.addEventListener('pointermove', (e) => {
-      if (x0 === null) return;
-      dx = e.clientX - x0;
-      if (!horizontal && Math.abs(dx) > 12 && Math.abs(dx) > Math.abs(e.clientY - y0)) {
-        horizontal = true;
-        row.setPointerCapture?.(e.pointerId);
-      }
-      if (horizontal) {
-        row.style.transform = `translateX(${dx}px)`;
-        row.style.opacity = String(Math.max(0.2, 1 - Math.abs(dx) / 220));
-      }
-    });
-    const end = () => {
-      if (x0 === null) return;
-      x0 = null;
-      if (horizontal && Math.abs(dx) > 110) {
-        row.classList.add('swiped');
-        vibrate(HAPTIC.item);
-        setTimeout(() => removeFood(ctx, Number(row.dataset.swipe)), 160);
-      } else {
-        row.style.transform = '';
-        row.style.opacity = '';
-      }
-    };
-    row.addEventListener('pointerup', end);
-    row.addEventListener('pointercancel', end);
-  });
 }
 
 /* ---------- Preset management ---------- */

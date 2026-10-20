@@ -111,7 +111,7 @@ export function concentricRings({ rings, size = 196, stroke = 14, gap = 5, inner
  * Vertical bar chart for 7 days. values: numbers (or null), keys: day keys.
  * Draws a dashed target line when a target is set.
  */
-export function barChart({ keys, values, target, color = 'var(--accent)', format = fmtShort, unit = '' }) {
+export function barChart({ keys, values, target, color = 'var(--accent)', format = fmtShort, unit = '', stack = null, stackColor = color, tips = null }) {
   const W = 360, H = 190, top = 26, bottom = 34, side = 8;
   const max = Math.max(target || 0, ...values.map((v) => v || 0), 1) * 1.08;
   const plotH = H - top - bottom;
@@ -127,10 +127,17 @@ export function barChart({ keys, values, target, color = 'var(--accent)', format
     // Rounded top only: a rounded rect plus a square patch over the bottom corners.
     const x = (cx - bw / 2).toFixed(1), yTop = (top + plotH - bh).toFixed(1), rr = Math.min(8, bw / 2, bh / 2);
     const fill = met ? 'var(--success)' : color;
-    bars += `<g class="bar" style="--i:${i}" data-tip="${shortDate(keys[i])} · ${format(val)}${unit ? ` ${unit}` : ''}">
+    // Optional stacked top segment (e.g. naps on top of night sleep): the whole bar is drawn in the
+    // top color, then the base part is painted over it from the bottom.
+    const top2 = stack ? Math.min(val, stack[i] || 0) : 0;
+    const baseH = top2 > 0 ? (bh * (val - top2)) / val : bh;
+    const fillTop = top2 > 0 ? (met ? 'var(--success-light)' : stackColor) : fill;
+    const tip = tips?.[i] || `${shortDate(keys[i])} · ${format(val)}${unit ? ` ${unit}` : ''}`;
+    bars += `<g class="bar" style="--i:${i}" data-tip="${tip}">
       <rect class="bar-hit" x="${(cx - slot / 2).toFixed(1)}" y="${top}" width="${slot.toFixed(1)}" height="${plotH}" fill="transparent"/>
-      ${bh > 0 ? `<rect x="${x}" y="${yTop}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="${rr}" fill="${fill}"/>
-      <rect x="${x}" y="${(top + plotH - Math.min(bh, rr)).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.min(bh, rr).toFixed(1)}" fill="${fill}"/>` : ''}
+      ${bh > 0 ? `<rect x="${x}" y="${yTop}" width="${bw.toFixed(1)}" height="${bh.toFixed(1)}" rx="${rr}" fill="${fillTop}"${top2 > 0 ? ` class="bar-top" data-h="${(bh - baseH).toFixed(2)}"` : ''}/>
+      <rect x="${x}" y="${(top + plotH - Math.min(bh, rr)).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.min(bh, rr).toFixed(1)}" fill="${fillTop}"/>` : ''}
+      ${top2 > 0 && baseH > 0 ? `<rect class="bar-base" x="${x}" y="${(top + plotH - baseH).toFixed(1)}" width="${bw.toFixed(1)}" height="${baseH.toFixed(2)}" fill="${fill}"/>` : ''}
     </g>`;
     if (val > 0) {
       bars += `<text x="${cx}" y="${(top + plotH - bh - 7).toFixed(1)}" class="chart-val">${format(val)}</text>`;

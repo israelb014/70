@@ -7,7 +7,7 @@ import { lastNDays, todayKey, shortDate } from '../dates.js';
 import { computeRecords, foodTotals, waterMl } from '../stats.js';
 import { weeklySummary, copyText } from '../export.js';
 import { heatmapCard, bindHeatmap } from '../heatmap.js';
-import { levelInfo, weekXP, badgeStates, sleepMinutes, fmtDuration, averageBedtime } from '../progress.js';
+import { levelInfo, weekXP, badgeStates, sleepMinutes, fmtDuration, averageBedtime, totalSleepMinutes, napsMinutes, hasSleep } from '../progress.js';
 import { medallion } from '../badgeArt.js';
 
 export function render(root, ctx) {
@@ -93,13 +93,20 @@ function waterTrendCard(st, keys) {
 
 function sleepTrendCard(st, keys) {
   const target = st.sleepTarget || 8;
-  const logged = keys.map((k) => getDay(k).sleep).filter(Boolean);
-  const hours = keys.map((k) => sleepMinutes(getDay(k).sleep) / 60);
-  const avgMin = logged.length ? logged.reduce((a, s) => a + sleepMinutes(s), 0) / logged.length : 0;
-  const avgBed = averageBedtime(logged.map((s) => s.bed));
+  const days = keys.map((k) => getDay(k));
+  // Bars and the average use the TOTAL (night + naps); naps are a lighter segment on top.
+  const logged = days.filter(hasSleep);
+  const hours = days.map((d) => totalSleepMinutes(d) / 60);
+  const napHours = days.map((d) => napsMinutes(d) / 60);
+  const tips = days.map((d, i) => (napsMinutes(d)
+    ? `${shortDate(keys[i])} · לילה ${fmtDuration(sleepMinutes(d.sleep))} · תנומות ${fmtDuration(napsMinutes(d))} · סה״כ ${fmtDuration(totalSleepMinutes(d))} שעות`
+    : null));
+  const avgMin = logged.length ? logged.reduce((a, d) => a + totalSleepMinutes(d), 0) / logged.length : 0;
+  // Average bedtime: night sleep only.
+  const avgBed = averageBedtime(days.filter((d) => d.sleep).map((d) => d.sleep.bed));
   return `<section class="card role-sleep">
     <div class="card-head">${icon('bed', 'head-ic')}<h2>שינה · 7 ימים</h2></div>
-    ${barChart({ keys, values: hours, target, color: 'var(--sleep)', format: (v) => fmtDuration(v * 60), unit: 'שעות' })}
+    ${barChart({ keys, values: hours, target, color: 'var(--sleep)', format: (v) => fmtDuration(v * 60), unit: 'שעות', stack: napHours, stackColor: 'var(--sleep-light)', tips })}
     <p class="legend"><span class="lg-line"></span>יעד ${num(target)} שעות</p>
     <div class="hm-stats">
       <div><span class="stat-num">${logged.length ? num(fmtDuration(avgMin)) : '–'}</span><span class="muted small">ממוצע שעות שינה</span></div>

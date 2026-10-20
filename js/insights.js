@@ -4,7 +4,7 @@
 import { getState, getDay, activeExercises, exerciseById } from './storage.js';
 import { addDays, lastNDays, todayKey, weekdayName, parseKey } from './dates.js';
 import { foodTotals, dayCompletion, exercisesForDay, computeRecords, waterMl } from './stats.js';
-import { sleepMinutes, fmtDuration, walkHistory, BADGES } from './progress.js';
+import { sleepMinutes, fmtDuration, walkHistory, BADGES, durText, totalSleepMinutes, hasSleep, napsMinutes } from './progress.js';
 import { int, trim, plural } from './hebrew.js';
 
 /* ---------- helpers ---------- */
@@ -38,13 +38,6 @@ function recordText(id, value, name) {
 }
 
 /** "50 דקות" / "1:10 שעות" */
-function durText(min) {
-  const m = Math.round(min);
-  if (m < 60) return plural(m, 'דקה אחת', 'דקות');
-  if (m % 60 === 0) return plural(m / 60, 'שעה אחת', 'שעות');
-  return `${fmtDuration(m)} שעות`;
-}
-
 const mk = (scope) => (id, text, kind, priority, cat) => ({ id, text, kind, priority, scope, cat });
 const day = mk('day');
 const week = mk('week');
@@ -142,17 +135,18 @@ export function dayInsights(k) {
     check('sec', b.sec, (n) => `עוד ${plural(n, 'שנייה אחת', 'שניות')} לשיא שלך ${pre('ב', ex.name)}`);
   }
 
-  // 8. Sleep last night vs target, and vs the previous 7 days' average (min 3 nights, diff ≥ 45 min)
-  if (d.sleep) {
-    const m = sleepMinutes(d.sleep);
+  // 8. Total sleep (night + naps) vs target, and vs the previous 7 days' average (min 3 days, diff ≥ 45 min)
+  if (hasSleep(d)) {
+    const m = totalSleepMinutes(d);
     const target = (st.sleepTarget || 8) * 60;
+    const when = napsMinutes(d) ? 'היום' : 'הלילה'; // with naps the total is not just "last night"
     out.push(m >= target
-      ? day('sleep', `ישנת ${fmtDuration(m)} שעות הלילה ועמדת ביעד השינה`, 'positive', 52, 'sleep')
-      : day('sleep', `ישנת ${fmtDuration(m)} שעות הלילה, ${durText(target - m)} פחות מהיעד`, 'attention', 54, 'sleep'));
+      ? day('sleep', `ישנת ${fmtDuration(m)} שעות ${when} ועמדת ביעד השינה`, 'positive', 52, 'sleep')
+      : day('sleep', `ישנת ${fmtDuration(m)} שעות ${when}, ${durText(target - m)} פחות מהיעד`, 'attention', 54, 'sleep'));
     const prev = [];
     for (let i = 1; i <= 7; i++) {
-      const s = days()[addDays(k, -i)]?.sleep;
-      if (s) prev.push(sleepMinutes(s));
+      const pd = days()[addDays(k, -i)];
+      if (hasSleep(pd)) prev.push(totalSleepMinutes(pd));
     }
     if (prev.length >= 3) {
       const diff = m - avg(prev);
@@ -197,7 +191,7 @@ export function weekInsights(today = todayKey()) {
     { id: 'protein', cat: 'food', has: (d) => d.food.length > 0, val: (k) => foodTotals(k).protein, agg: 'avg', name: 'ממוצע החלבון היומי', good: true },
     { id: 'kcal', cat: 'food', has: (d) => d.food.length > 0, val: (k) => foodTotals(k).kcal, agg: 'avg', name: 'ממוצע הקלוריות היומי', good: null },
     { id: 'completion', cat: 'strength', has: (d, k) => !d.rest && dayCompletion(k).total > 0 && Object.keys(d.exercises || {}).length > 0, val: (k) => dayCompletion(k).fraction, agg: 'avg', name: 'אחוז השלמת האימונים', good: true },
-    { id: 'sleep', cat: 'sleep', has: (d) => !!d.sleep, val: (k, d) => sleepMinutes(d.sleep), agg: 'avg', name: 'ממוצע השינה', good: true },
+    { id: 'sleep', cat: 'sleep', has: (d) => hasSleep(d), val: (k, d) => totalSleepMinutes(d), agg: 'avg', name: 'ממוצע השינה', good: true },
     { id: 'water', cat: 'food', has: (d) => waterMl(d) > 0, val: (k, d) => waterMl(d), agg: 'avg', name: 'ממוצע המים היומי', good: true },
   ];
   for (const m of metrics) {
@@ -222,7 +216,7 @@ export function weekInsights(today = todayKey()) {
     out.push(week(`wow:${m.id}`, text, kind, base + Math.min(15, Math.round(Math.abs(pct) / 10)), m.cat));
   }
 
-  // 2 + 3. Sleep → next-day calories / same-day workout completion (all history, ≥ 3 days per group)
+  // 2 + 3. Night sleep (naps excluded) → next-day calories / same-day workout completion (all history, ≥ 3 days per group)
   const groups = { short: [], good: [] };
   for (const [k, d] of Object.entries(days())) {
     if (!d.sleep) continue;
