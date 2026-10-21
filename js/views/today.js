@@ -1,5 +1,5 @@
 // "היום" tab: completion ring + streak, steps, stairs, cycling, exercises and rest day.
-import { getState, getDay, updateDay, save, exerciseById } from '../storage.js';
+import { getState, getDay, updateDay, save, exerciseById, updateMeta } from '../storage.js';
 import { ring, concentricRings } from '../charts.js';
 import {
   icon, esc, fmt, num, parseNum, toast, vibrate, openSheet, confirmDialog, invalid,
@@ -583,7 +583,14 @@ function toggleRow(root, ctx, id, forceClose = false) {
 }
 
 const prefillReps = (ex, i) => ex.last?.reps?.[i] ?? ex.reps;
-const prefillWeight = (ex) => ex.last?.weight ?? ex.weight ?? null;
+/** Weight for set i: same set number of the last session (null = bodyweight there), else the target. */
+const prefillWeight = (ex, i = 0) => {
+  const ws = ex.last?.weights;
+  if (Array.isArray(ws)) return i < ws.length ? ws[i] ?? null : ex.weight ?? null;
+  return ex.last?.weight ?? ex.weight ?? null; // data from before per-set weights
+};
+/** Chip shows a set's weight when it differs from the exercise target, or when there is no target weight. */
+const showsWeight = (ex, w) => w > 0 && (!(ex.weight > 0) || w !== ex.weight);
 
 function setsBody(ex, entry, showHint) {
   const sets = entry?.sets || [];
@@ -592,15 +599,18 @@ function setsBody(ex, entry, showHint) {
   for (let i = 0; i < n; i++) {
     const s = sets[i];
     const done = s?.done;
+    const reps = done ? s.reps : prefillReps(ex, i);
+    const w = done ? s.weight : prefillWeight(ex, i);
+    const wLbl = showsWeight(ex, w) ? `${fmt(w)} ק״ג` : '';
     chips += `<button type="button" class="chip press ${done ? 'done' : ''}" data-action="set" data-long="set" data-ex="${ex.id}" data-i="${i}"
-      aria-label="סט ${i + 1}${done ? ' בוצע' : ''}">
-      <span class="chip-reps">${num(done ? s.reps : prefillReps(ex, i))}</span>
-      <span class="chip-lbl">${done && s.weight ? `${num(s.weight)} ק״ג` : `סט ${num(i + 1)}`}</span>
+      aria-label="סט ${i + 1}: ${reps ?? 0} חזרות${wLbl ? ` · ${wLbl}` : ''}${done ? ' · בוצע' : ''}">
+      <span class="chip-reps">${num(reps)}</span>
+      <span class="chip-lbl">${wLbl ? num(fmt(w)) + ' ק״ג' : `סט ${num(i + 1)}`}</span>
     </button>`;
   }
   return `<div class="chips">${chips}</div>
-    <div class="ex-foot"><p class="hint set-hint grow" ${showHint ? '' : 'hidden'}>הקשה מסמנת סט · לחיצה ארוכה לעריכת חזרות</p>
-      <button type="button" class="icon-btn sm press" data-action="sets-edit" data-ex="${ex.id}" aria-label="עריכת ביצוע">${icon('edit')}</button></div>`;
+    <div class="ex-foot"><p class="hint set-hint grow" ${showHint ? '' : 'hidden'}>הקשה מסמנת סט · לחיצה ארוכה לעריכת חזרות ומשקל</p>
+      <button type="button" class="icon-btn sm press" data-action="sets-edit" data-ex="${ex.id}" aria-label="עריכת סט">${icon('edit')}</button></div>`;
 }
 
 function timedBody(ex, entry) {
@@ -639,10 +649,13 @@ function trackCompletion(ctx, ex, fn) {
   }
 }
 
+/** Remember reps and weight per set number, so the next session prefills set by set. */
 function rememberSets(ex, sets) {
-  const reps = sets.map((s, i) => (s?.done ? s.reps : ex.last?.reps?.[i] ?? ex.reps));
+  const all = Array.from({ length: Math.max(ex.sets || 1, sets.length) }, (_, i) => sets[i]);
+  const reps = all.map((s, i) => (s?.done ? s.reps : ex.last?.reps?.[i] ?? ex.reps));
+  const weights = all.map((s, i) => (s?.done ? s.weight ?? null : prefillWeight(ex, i)));
   const lastDone = [...sets].reverse().find((s) => s?.done);
-  ex.last = { ...(ex.last || {}), reps, weight: lastDone ? lastDone.weight ?? null : prefillWeight(ex) };
+  ex.last = { ...(ex.last || {}), reps, weights, weight: lastDone ? lastDone.weight ?? null : prefillWeight(ex) };
   save();
 }
 
@@ -704,8 +717,14 @@ async function onClick(e, ctx) {
       return rerender();
     }
     case 'sets-edit': {
+      // The edit control opens the next set still to do (or the last set when all are done).
       const ex = exerciseById(b.dataset.ex);
-      if (ex) await editSets(ctx, ex, null);
+      if (!ex) return;
+      const sets = getDay(k).exercises[ex.id]?.sets || [];
+      const n = Math.max(ex.sets || 1, sets.length);
+      let i = 0;
+      while (i < n && sets[i]?.done) i++;
+      await editSet(ctx, ex, Math.min(i, n - 1));
       return;
     }
     case 'timer': {
@@ -861,11 +880,11 @@ function onChange(e, ctx) {
   }
 }
 
-/** Long-press on a set chip opens the edit dialog focused on that set. */
+/** Long-press on a set chip opens the per-set sheet (reps + weight). */
 export function onLong(el, ctx) {
   if (el.dataset.long !== 'set') return;
   const ex = exerciseById(el.dataset.ex);
-  if (ex) editSets(ctx, ex, Number(el.dataset.i));
+  if (ex) editSet(ctx, ex, Number(el.dataset.i));
 }
 
 function toggleSet(ctx, ex, i) {
@@ -880,7 +899,7 @@ function toggleSet(ctx, ex, i) {
       } else {
         s.done = true;
         s.reps = s.reps ?? prefillReps(ex, i);
-        s.weight = s.weight ?? prefillWeight(ex);
+        s.weight = s.weight ?? prefillWeight(ex, i);
         vibrate(HAPTIC.item);
       }
     })
@@ -888,50 +907,60 @@ function toggleSet(ctx, ex, i) {
   rememberSets(ex, getDay(ctx.date).exercises[ex.id].sets);
 }
 
-async function editSets(ctx, ex, focusIdx) {
-  const entry = getDay(ctx.date).exercises[ex.id];
-  const sets = entry?.sets || [];
-  const n = Math.max(ex.sets || 1, sets.length);
-  const doneW = sets.find((s) => s?.done && s.weight != null)?.weight;
-  const weight = doneW ?? prefillWeight(ex);
-  let rows = '';
-  for (let i = 0; i < n; i++) {
-    const s = sets[i];
-    const val = s?.done ? s.reps : i === focusIdx ? prefillReps(ex, i) : '';
-    rows += `<label class="set-row"><span>סט ${num(i + 1)}</span>
-      <input type="number" inputmode="numeric" min="0" name="r${i}" value="${val ?? ''}" placeholder="${prefillReps(ex, i)}"></label>`;
-  }
-  const body = `<div class="set-rows">${rows}</div>
-    <label class="field"><span>משקל לכל יד, ק״ג (רשות)</span>
-      <input type="number" inputmode="decimal" min="0" step="0.5" name="weight" value="${weight ?? ''}"></label>
-    <p class="hint">שדה ריק = סט שלא בוצע</p>`;
+const REPS_MAX = 200, W_MAX = 200, W_STEP = 0.5;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const round1 = (v) => Math.round(v * 10) / 10;
+
+/**
+ * Per-set sheet: "חזרות" stepper (0–200, step 1) and "משקל (ק״ג)" stepper (0–200, step 0.5; the number
+ * is typeable, 0 = bodyweight). Saving marks the set done. Works for done and undone sets.
+ */
+async function editSet(ctx, ex, i) {
+  const s = getDay(ctx.date).exercises[ex.id]?.sets?.[i];
+  let reps = clamp(Math.round(Number(s?.done ? s.reps : prefillReps(ex, i)) || 0), 0, REPS_MAX);
+  let w = clamp(Number(s?.done ? s.weight : prefillWeight(ex, i)) || 0, 0, W_MAX);
+  const sync = (root) => {
+    root.querySelector('[data-reps-val]').textContent = String(reps);
+    const inp = root.querySelector('[data-w-val]');
+    if (document.activeElement !== inp) inp.value = fmt(w).replace(/,/g, '');
+    root.querySelector('[data-w-note]').textContent = w > 0 ? 'ק״ג' : 'משקל גוף';
+    root.querySelector('[data-step="reps:-1"]').disabled = reps <= 0;
+    root.querySelector('[data-step="reps:1"]').disabled = reps >= REPS_MAX;
+    root.querySelector('[data-step="w:-1"]').disabled = w <= 0;
+    root.querySelector('[data-step="w:1"]').disabled = w >= W_MAX;
+  };
+  const stepper = (name, label, value) => `<div class="set-stepper">
+      <span class="set-stepper-lbl">${label}</span>
+      <div class="stepper sm" role="group" aria-label="${label}">
+        <button type="button" class="stepper-btn press" data-step="${name}:1" aria-label="הוספה">${icon('plus')}</button>
+        <div class="stepper-val">${value}</div>
+        <button type="button" class="stepper-btn press" data-step="${name}:-1" aria-label="הפחתה">${icon('minus')}</button>
+      </div></div>`;
   const res = await openSheet({
-    title: ex.name,
-    body,
+    title: `${ex.name} · סט ${i + 1}`,
+    body: `${stepper('reps', 'חזרות', '<output class="num" data-reps-val aria-live="polite"></output><span>חזרות</span>')}
+      ${stepper('w', 'משקל (ק״ג)', '<input class="stepper-input num" data-w-val type="text" inputmode="decimal" autocomplete="off" aria-label="משקל בק״ג"><span data-w-note></span>')}`,
     onOpen: (root) => {
-      if (focusIdx !== null) {
-        const inp = root.querySelector(`[name=r${focusIdx}]`);
-        setTimeout(() => {
-          inp?.focus();
-          inp?.select();
-        }, 300);
-      }
+      sync(root);
+      root.querySelectorAll('[data-step]').forEach((btn) => btn.addEventListener('click', () => {
+        const [name, dir] = btn.dataset.step.split(':');
+        if (name === 'reps') reps = clamp(reps + Number(dir), 0, REPS_MAX);
+        else w = clamp(round1(Math.round((w + Number(dir) * W_STEP) / W_STEP) * W_STEP), 0, W_MAX);
+        vibrate(5);
+        sync(root);
+      }));
+      const inp = root.querySelector('[data-w-val]');
+      inp.addEventListener('focus', () => inp.select());
+      inp.addEventListener('input', () => {
+        const v = parseNum(inp.value);
+        w = v === null ? 0 : clamp(round1(v), 0, W_MAX);
+        sync(root);
+      });
+      inp.addEventListener('blur', () => sync(root));
     },
     actions: [
       { label: 'ביטול', value: null, kind: 'ghost' },
-      {
-        label: 'שמירה',
-        kind: 'primary',
-        onClick: (root) => {
-          const reps = [];
-          for (let i = 0; i < n; i++) {
-            const v = parseNum(root.querySelector(`[name=r${i}]`).value);
-            reps.push(v > 0 ? Math.round(v) : null);
-          }
-          const w = parseNum(root.querySelector('[name=weight]').value);
-          return { reps, weight: w > 0 ? w : null };
-        },
-      },
+      { label: 'שמירה', kind: 'primary', onClick: () => ({ reps, weight: w > 0 ? w : null }) },
     ],
   });
   if (!res) return;
@@ -939,29 +968,45 @@ async function editSets(ctx, ex, focusIdx) {
   trackCompletion(ctx, ex, () =>
     updateDay(ctx.date, (d) => {
       const e = (d.exercises[ex.id] ||= { sets: [] });
-      e.sets = res.reps.map((r) => (r ? { reps: r, weight: res.weight, done: true } : { reps: null, weight: null, done: false }));
+      e.sets ||= [];
+      while (e.sets.length <= i) e.sets.push({ reps: null, weight: null, done: false });
+      e.sets[i] = { reps: res.reps, weight: res.weight, done: true };
     })
   );
+  vibrate(HAPTIC.item);
   rememberSets(ex, getDay(ctx.date).exercises[ex.id].sets);
   ctx.rerender();
+  await offerTargetUpdate(ctx, ex);
+}
 
-  // Offer to carry the new values forward as the exercise target.
-  const done = res.reps.filter(Boolean);
-  if (!done.length) return;
-  const allDone = done.length >= (ex.sets || 1);
-  const minReps = Math.min(...done);
-  const weightChanged = (res.weight ?? null) !== (ex.weight ?? null);
-  const repsChanged = allDone && minReps !== ex.reps;
-  if (!weightChanged && !repsChanged) return;
-  const newReps = repsChanged ? minReps : ex.reps;
-  const desc = `${iso(`${ex.sets}×${newReps}`)}${res.weight ? ` · ${iso(fmt(res.weight))} ק״ג` : ''}`;
+/**
+ * Offer to carry the day's values forward as the exercise target — at most once per exercise per day,
+ * once the target number of sets is done, and only when ALL done sets share one weight (≠ target
+ * weight) or one rep count (≠ target reps).
+ */
+async function offerTargetUpdate(ctx, ex) {
+  const done = (getDay(ctx.date).exercises[ex.id]?.sets || []).filter((x) => x?.done);
+  // Judge the day only once the exercise's sets are all done (one heavy first set is not a new target).
+  if (!done.length || done.length < (ex.sets || 1)) return;
+  const prompts = getState().meta.targetPrompts || {};
+  if (prompts[ex.id] === ctx.date) return;
+  const same = (vals) => vals.every((v) => v === vals[0]);
+  const weights = done.map((x) => (x.weight > 0 ? x.weight : null));
+  const repsList = done.map((x) => x.reps);
+  const newWeight = same(weights) && weights[0] !== (ex.weight > 0 ? ex.weight : null) ? weights[0] : undefined;
+  const newReps = same(repsList) && repsList[0] > 0 && repsList[0] !== ex.reps ? repsList[0] : undefined;
+  if (newWeight === undefined && newReps === undefined) return;
+  updateMeta({ targetPrompts: { ...prompts, [ex.id]: ctx.date } });
+  const reps = newReps ?? ex.reps;
+  const weight = newWeight === undefined ? ex.weight ?? null : newWeight;
+  const desc = `${iso(`${ex.sets}×${reps}`)}${weight ? ` · ${iso(fmt(weight))} ק״ג` : ''}`;
   const ok = await confirmDialog(`לעדכן את היעד של "${ex.name}" ל-${desc}? כך ההתקדמות תמשיך גם בפעם הבאה.`, {
     title: 'עדכון יעד', ok: 'עדכון יעד', cancel: 'לא עכשיו',
   });
   if (!ok) return;
-  ex.reps = newReps;
-  ex.weight = res.weight;
-  ex.last = { ...(ex.last || {}), reps: Array(ex.sets).fill(newReps), weight: res.weight };
+  ex.reps = reps;
+  ex.weight = weight;
+  ex.last = { ...(ex.last || {}), reps: Array(ex.sets).fill(reps), weight, weights: Array(ex.sets).fill(weight) };
   save();
   toast('היעד עודכן');
   ctx.rerender();

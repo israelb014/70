@@ -58,6 +58,10 @@ export function normalize(d) {
     for (const key of ['lastBackupAt', 'backupSnoozeUntil']) {
       if (typeof d.meta[key] === 'string' && !Number.isNaN(Date.parse(d.meta[key]))) s.meta[key] = d.meta[key];
     }
+    // "Update target" prompt shown: { exerciseId: dayKey } (at most once per exercise per day).
+    if (isObj(d.meta.targetPrompts)) s.meta.targetPrompts = { ...d.meta.targetPrompts };
+    // Keep the stored key order, so an exported backup re-imports byte-identical.
+    s.meta = Object.fromEntries(Object.keys({ ...d.meta, ...s.meta }).filter((key) => key in s.meta).map((key) => [key, s.meta[key]]));
   }
   s.exercises = Array.isArray(d.exercises) ? d.exercises.filter((e) => isObj(e) && e.id && e.name) : [];
   s.mealPresets = Array.isArray(d.mealPresets) ? d.mealPresets.filter((m) => isObj(m) && m.id) : [];

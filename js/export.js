@@ -22,7 +22,14 @@ function exerciseLine(ex, entry) {
     const reps = done.length === 1
       ? plural(done[0].reps, 'חזרה אחת', 'חזרות')
       : `${done.map((s) => int(s.reps)).join(', ')} חזרות`;
-    return `${plural(done.length, 'סט אחד', 'סטים')} (${reps})${kg(done.find((s) => s.weight)?.weight)}`;
+    const ws = done.map((s) => (s.weight > 0 ? s.weight : null));
+    if (ws.some((w) => w !== ws[0])) {
+      // Different weights: list each set ("8 × 12 ק״ג"; bodyweight sets show only the reps), isolated
+      // so "8 × 12" keeps its order inside RTL text.
+      const list = done.map((s) => (s.weight > 0 ? `${iso(`${int(s.reps)} × ${trim(s.weight, 1)}`)} ק״ג` : int(s.reps)));
+      return `${plural(done.length, 'סט אחד', 'סטים')} (${list.join(', ')})`;
+    }
+    return `${plural(done.length, 'סט אחד', 'סטים')} (${reps})${kg(ws[0])}`;
   }
   if (ex.type === 'timed') return entry.seconds ? `${plural(entry.seconds, 'שנייה אחת', 'שניות')}${kg(entry.weight)}` : '';
   return entry.reps ? `סט אחד (${plural(entry.reps, 'חזרה אחת', 'חזרות')})${kg(entry.weight)}` : '';
