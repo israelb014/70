@@ -1,7 +1,7 @@
 // Daily / weekly text summaries (clipboard) and JSON backup export / import.
 import { getState, getDay, validateBackup, replaceState, updateMeta } from './storage.js';
 import { lastNDays, todayKey, shortDate, weekdayName, fullDate } from './dates.js';
-import { computeRecords, exercisesForDay, foodTotals, floorsOf, dayCompletion, completionPct, sortedFood, waterMl } from './stats.js';
+import { computeRecords, exercisesForDay, foodTotals, floorsOf, floorsTarget, dayCompletion, completionPct, sortedFood, waterMl } from './stats.js';
 import { fmt } from './ui.js';
 import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES, dayXP, durText, napMinutes, napsMinutes, totalSleepMinutes, sortedNaps } from './progress.js';
 import { int, dec1, dec2, trim, iso, plural, unitAmount } from './hebrew.js';
@@ -28,8 +28,11 @@ function exerciseLine(ex, entry) {
   return entry.reps ? `סט אחד (${plural(entry.reps, 'חזרה אחת', 'חזרות')})${kg(entry.weight)}` : '';
 }
 
-const climbsText = (day) =>
-  `${plural(day.climbs.length, 'עלייה אחת', 'עליות')} · ${plural(floorsOf(day), 'קומה אחת', 'קומות')}`;
+/** "4 עליות · 27 קומות / 36" — entries (any type), floors, daily floors target. */
+const climbsText = (day) => {
+  const t = floorsTarget(getState().settings || {});
+  return `${plural(day.climbs.length, 'עלייה אחת', 'עליות')} · ${plural(floorsOf(day), 'קומה אחת', 'קומות')}${t ? ` / ${int(t)}` : ''}`;
+};
 
 const sleepText = (sl) => `שינה: ${iso(fmtDuration(sleepMinutes(sl)))} שעות (${iso(`${sl.bed}–${sl.wake}`)})`;
 /** Nap duration ("40 דקות" / "שעה אחת" / "1:20 שעות"); the H:MM form is isolated like the other times. */

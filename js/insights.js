@@ -3,7 +3,7 @@
 // cat (icon category): sleep | food | activity | strength | weight | consistency
 import { getState, getDay, activeExercises, exerciseById } from './storage.js';
 import { addDays, lastNDays, todayKey, weekdayName, parseKey } from './dates.js';
-import { foodTotals, dayCompletion, exercisesForDay, computeRecords, waterMl } from './stats.js';
+import { foodTotals, dayCompletion, exercisesForDay, computeRecords, waterMl, floorsOf, floorsTarget } from './stats.js';
 import { sleepMinutes, fmtDuration, walkHistory, BADGES, durText, totalSleepMinutes, hasSleep, napsMinutes } from './progress.js';
 import { int, trim, plural } from './hebrew.js';
 
@@ -33,7 +33,7 @@ function recordText(id, value, name) {
   if (kind === 'sec') return `שיא חדש ${pre('ב', name)}: ${plural(value, 'שנייה אחת', 'שניות')}`;
   if (id === 'ride') return `שיא חדש ברכיבה: ${trim(value, 1)} ק״מ`;
   if (id === 'steps') return `שיא חדש בצעדים: ${int(value)} צעדים ביום`;
-  if (id === 'climbs') return `שיא חדש במדרגות: ${plural(value, 'עלייה אחת', 'עליות')} ביום`;
+  if (id === 'climbs') return `שיא חדש במדרגות: ${plural(value, 'קומה אחת', 'קומות')} ביום`;
   return `שיא אישי חדש: ${trim(value, 1)}`;
 }
 
@@ -161,7 +161,7 @@ export function dayInsights(k) {
   const all = [];
   const add = (label, tracked, met) => { if (tracked) { all.push(label); if (met) targets.push(label); } };
   add('צעדים', st.stepsTarget, (d.steps || 0) >= st.stepsTarget);
-  add('מדרגות', st.climbsTarget, d.climbs.length >= st.climbsTarget);
+  add('מדרגות', floorsTarget(st), floorsOf(d) >= floorsTarget(st));
   add('חלבון', st.proteinTarget, foodTotals(k).protein >= st.proteinTarget);
   add('מים', st.waterTarget, waterMl(d) >= st.waterTarget);
   const c = dayCompletion(k);
@@ -186,7 +186,7 @@ export function weekInsights(today = todayKey()) {
   // 1. Week-over-week changes (both weeks ≥ 4 data days, |change| ≥ 10%)
   const metrics = [
     { id: 'steps', cat: 'activity', has: (d) => d.steps > 0, val: (k, d) => d.steps, agg: 'avg', name: 'ממוצע הצעדים היומי', good: true },
-    { id: 'climbs', cat: 'activity', has: (d) => d.climbs.length > 0, val: (k, d) => d.climbs.length, agg: 'sum', name: 'מספר העליות במדרגות', good: true },
+    { id: 'climbs', cat: 'activity', has: (d) => floorsOf(d) > 0, val: (k, d) => floorsOf(d), agg: 'sum', name: 'מספר הקומות במדרגות', good: true },
     { id: 'ride', cat: 'activity', has: (d) => d.rides.length > 0, val: (k, d) => d.rides.reduce((a, r) => a + (Number(r.km) || 0), 0), agg: 'sum', name: 'מרחק הרכיבה', good: true },
     { id: 'protein', cat: 'food', has: (d) => d.food.length > 0, val: (k) => foodTotals(k).protein, agg: 'avg', name: 'ממוצע החלבון היומי', good: true },
     { id: 'kcal', cat: 'food', has: (d) => d.food.length > 0, val: (k) => foodTotals(k).kcal, agg: 'avg', name: 'ממוצע הקלוריות היומי', good: null },
@@ -210,6 +210,8 @@ export function weekInsights(today = todayKey()) {
     // Percent-of-a-percent and percent-of-hours read badly — show the actual values for those.
     const text = m.id === 'completion'
       ? `השלמת האימונים ${up ? 'עלתה' : 'ירדה'} מ-${Math.round(vb * 100)}% ל-${Math.round(va * 100)}% לעומת השבוע הקודם`
+      : m.id === 'climbs'
+        ? `השבוע עלית ${int(va)} קומות, ${Math.abs(pct)}% ${up ? 'יותר' : 'פחות'} משבוע שעבר`
       : m.id === 'sleep'
         ? `ממוצע השינה ${up ? 'עלה' : 'ירד'} מ-${fmtDuration(vb)} ל-${fmtDuration(va)} שעות לעומת השבוע הקודם`
         : `${m.name} ${up ? 'עלה' : 'ירד'} ב-${Math.abs(pct)}% לעומת השבוע הקודם`;
@@ -316,7 +318,7 @@ export function weekInsights(today = todayKey()) {
   const trackedRecently = (fn) => lastNDays(28, today).some((k) => days()[k] && fn(days()[k], k, true));
   const checks = [
     { id: 'steps', label: 'הצעדים', t: st.stepsTarget, met: (d) => (d.steps || 0) >= st.stepsTarget, used: (d) => d.steps > 0 },
-    { id: 'climbs', label: 'המדרגות', t: st.climbsTarget, met: (d) => d.climbs.length >= st.climbsTarget, used: (d) => d.climbs.length > 0 },
+    { id: 'climbs', label: 'המדרגות', t: floorsTarget(st), met: (d) => floorsOf(d) >= floorsTarget(st), used: (d) => d.climbs.length > 0 },
     { id: 'protein', label: 'החלבון', t: st.proteinTarget, met: (d, k) => foodTotals(k).protein >= st.proteinTarget, used: (d) => d.food.length > 0 },
     { id: 'water', label: 'המים', t: st.waterTarget, met: (d) => waterMl(d) >= st.waterTarget, used: (d) => waterMl(d) > 0 },
   ];

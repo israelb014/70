@@ -884,6 +884,22 @@ input[type='time']::-webkit-calendar-picker-indicator { opacity: 0.6; }
 .nap-msg { min-height: 24px; margin-top: var(--s-3); font: var(--t-body); color: var(--muted); text-align: center; }
 .nap-msg.bad { color: var(--danger); font-weight: 700; }
 
+/* ---------- Stairs: three climb buttons, custom stepper ---------- */
+.btn-trio { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s-2); }
+.btn-trio .big-add { padding: var(--s-3) var(--s-1); }
+.btn-trio .big-add strong { font: var(--t-body-strong); white-space: nowrap; }
+.btn-trio .big-add span { white-space: nowrap; }
+.stepper { display: flex; align-items: center; justify-content: space-between; gap: var(--s-4); padding: var(--s-2) 0 var(--s-4); }
+.stepper-btn {
+  width: 72px; height: 72px; flex: none; border: 0; border-radius: var(--r-pill); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; background: var(--accent-t); color: var(--accent);
+}
+.stepper-btn .ic { width: 32px; height: 32px; }
+.stepper-btn:disabled { opacity: 0.3; }
+.stepper-val { display: flex; flex-direction: column; align-items: center; }
+.stepper-val output { font: var(--t-display); font-size: 64px; line-height: 72px; font-variant-numeric: tabular-nums; }
+.stepper-val span { font: var(--t-caption); color: var(--muted); }
+
 /* Narrow phones (360px) */
 @media (max-width: 380px) {
   :root { --gutter: var(--s-4); }

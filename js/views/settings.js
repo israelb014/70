@@ -6,6 +6,7 @@ import { SETTINGS_FIELDS, fieldHTML, validateField } from './wizard.js';
 import { exerciseEditorHTML, handleExerciseAction } from '../exerciseEditor.js';
 import { exportBackup, readBackupFile, restoreBackup, canShareBackup, shareBackup, lastBackupDate } from '../export.js';
 import { APP_VERSION } from '../config.js';
+import { floorsTarget } from '../stats.js';
 
 const GROUPS = [
   { title: 'משקל וגוף', icon: 'scale', keys: ['startWeight', 'targetWeight', 'height'] },
@@ -21,6 +22,7 @@ export function render(root, ctx) {
       (g) => `<section class="card">
         <div class="card-head">${icon(g.icon, 'head-ic')}<h2>${g.title}</h2></div>
         <div class="field-grid">${g.keys.map((k) => fieldHTML(k, st[k])).join('')}</div>
+        ${g.keys.includes('climbsTarget') ? `<p class="muted small" data-floors-target>${floorsTargetText(st)}</p>` : ''}
       </section>`
     ).join('')}
     <section class="card">
@@ -89,6 +91,12 @@ function productsCard() {
   </section>`;
 }
 
+/** "יעד יומי: 36 קומות" = climbsTarget × floorsRegular. */
+function floorsTargetText(st) {
+  const t = floorsTarget(st);
+  return `יעד יומי: ${t === 1 ? 'קומה אחת' : `${num(t)} קומות`}`;
+}
+
 function onChange(e, ctx) {
   const t = e.target;
   if (t.dataset.setting) {
@@ -100,6 +108,8 @@ function onChange(e, ctx) {
       return;
     }
     updateSettings({ [key]: r.value });
+    const ft = document.querySelector('[data-floors-target]');
+    if (ft) ft.innerHTML = floorsTargetText(getState().settings);
     toast('נשמר');
   } else if (t.matches('[data-file]') && t.files?.[0]) {
     importFile(t.files[0], ctx);

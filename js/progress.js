@@ -3,7 +3,7 @@
 // a past day recalculates XP, levels and badge dates automatically.
 import { getState, getDay, exerciseById } from './storage.js';
 import { todayKey, addDays, lastNDays } from './dates.js';
-import { exerciseProgress, dayCompletion, isDayActive, foodTotals } from './stats.js';
+import { exerciseProgress, dayCompletion, isDayActive, foodTotals, floorsOf, floorsTarget } from './stats.js';
 import { plural } from './hebrew.js';
 
 /* ---------- Sleep ---------- */
@@ -90,7 +90,7 @@ export function lastSleep() {
 
 /* ---------- Heatmap score ---------- */
 
-/** 0..1 = average of exercise completion, steps, climbs and protein vs targets (each capped at 1). */
+/** 0..1 = average of exercise completion, steps, stairs floors and protein vs targets (each capped at 1). */
 export function dayScore(k) {
   const day = getState().days[k];
   if (!day) return 0;
@@ -99,7 +99,7 @@ export function dayScore(k) {
   const parts = [
     dayCompletion(k).fraction,
     part(day.steps, st.stepsTarget),
-    part(day.climbs.length, st.climbsTarget),
+    part(floorsOf(day), floorsTarget(st)),
     part(foodTotals(k).protein, st.proteinTarget),
   ];
   return parts.reduce((a, b) => a + b, 0) / 4;
@@ -120,7 +120,7 @@ export function dayXP(k) {
     else xp += entry.reps > 0 ? 3 : 0;
   }
   xp += Math.floor((day.steps || 0) / 1000);
-  for (const c of day.climbs || []) xp += c.type === 'roof' ? 5 : 3;
+  xp += Math.floor(floorsOf(day) / 2); // 1 XP per 2 floors per day (regular 6 = 3, roof 10 = 5)
   for (const r of day.rides || []) xp += 2 * Math.floor(Number(r.km) || 0);
   if (st.proteinTarget && foodTotals(k).protein >= st.proteinTarget) xp += 10;
   const comp = dayCompletion(k);
@@ -172,7 +172,7 @@ export const BADGES = [
     id: `ride${n}`, family: 'ride', tier: String(n), name: `רכיבת ${n}`, desc: `רכיבה אחת של לפחות ${n} ק״מ.`, metric: 'rideMax', target: n, unit: 'ק״מ',
   })),
   ...[100, 500, 1000].map((n) => ({
-    id: `climbs${n}`, family: 'climbs', tier: n >= 1000 ? '1K' : String(n), name: `${n.toLocaleString('he-IL')} עליות`, desc: `${n.toLocaleString('he-IL')} עליות מדרגות בסך הכול.`, metric: 'climbsTotal', target: n,
+    id: `climbs${n}`, family: 'climbs', tier: n >= 1000 ? '1K' : String(n), name: `${n.toLocaleString('he-IL')} עליות`, desc: `שווה ערך ל-${n.toLocaleString('he-IL')} עליות של ${getState().settings?.floorsRegular || 6} קומות (סך הקומות ÷ קומות בעלייה רגילה).`, metric: 'climbsTotal', target: n,
   })),
   { id: 'steps1m', family: 'steps', tier: '1M', name: 'מיליון צעדים', desc: 'מיליון צעדים בסך הכול.', metric: 'stepsTotal', target: 1000000 },
   ...[30, 40, 50].map((n) => ({
@@ -202,7 +202,8 @@ export function walkHistory() {
   const earned = {};
   if (!first) return { metrics: m, earned, longestStreak: 0 };
 
-  let run = 0, proteinRun = 0, sleepRun = 0, wi = 0, minKg = Infinity;
+  let run = 0, proteinRun = 0, sleepRun = 0, wi = 0, minKg = Infinity, floorsTotal = 0, legacyClimbs = 0;
+  const seen = new Set(state.meta?.seenBadges || []);
   const end = todayKey();
   for (let k = first; k <= end; k = addDays(k, 1)) {
     const day = state.days[k];
@@ -216,7 +217,11 @@ export function walkHistory() {
       });
       if (anyDone) m.workoutDays++;
       for (const r of day.rides || []) m.rideMax = Math.max(m.rideMax, Number(r.km) || 0);
-      m.climbsTotal += (day.climbs || []).length;
+      // Climb-equivalents: total floors ÷ floorsRegular (rounded down); legacy entry count kept so
+      // badges earned under the old rule stay earned.
+      floorsTotal += floorsOf(day);
+      m.climbsTotal = Math.floor(floorsTotal / (Number(state.settings?.floorsRegular) || 6));
+      legacyClimbs += (day.climbs || []).filter((c) => c.type !== 'custom').length;
       m.stepsTotal += day.steps || 0;
       for (const [id, e] of Object.entries(day.exercises || {})) {
         const ex = exerciseById(id);
@@ -237,8 +242,13 @@ export function walkHistory() {
     while (wi < weights.length && weights[wi].date <= k) minKg = Math.min(minKg, weights[wi++].kg);
     if (minKg < Infinity && st.startWeight) m.kgLost = Math.max(m.kgLost, Math.round((st.startWeight - minKg) * 10) / 10);
 
-    for (const b of BADGES) if (!earned[b.id] && m[b.metric] >= b.target) earned[b.id] = k;
+    for (const b of BADGES) {
+      if (earned[b.id]) continue;
+      // Climb badges already shown under the old rule (entry count) stay earned on their original date.
+      if (m[b.metric] >= b.target || (b.family === 'climbs' && seen.has(b.id) && legacyClimbs >= b.target)) earned[b.id] = k;
+    }
   }
+  for (const b of BADGES) if (b.family === 'climbs' && seen.has(b.id) && !earned[b.id]) earned[b.id] = end;
   return { metrics: m, earned, longestStreak: m.streak };
 }
 

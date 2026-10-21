@@ -7,7 +7,7 @@ import {
 } from '../ui.js';
 import {
   dayCompletion, currentStreak, exercisesForDay, exerciseProgress, computeRecords, recordIdsOn,
-  longestRideKm, floorsOf,
+  longestRideKm, floorsOf, floorsTarget,
 } from '../stats.js';
 import { runTimer } from '../timer.js';
 import {
@@ -329,8 +329,8 @@ export function statusLine(day, st, c, steps, protein) {
   const exLeft = c.total - c.done;
   if (!day.rest && exLeft > 0) return `עוד ${plural(exLeft, 'תרגיל אחד', 'תרגילים')}`;
   if (st.stepsTarget && steps < st.stepsTarget) return `עוד ${plural(st.stepsTarget - steps, 'צעד אחד', 'צעדים', int)}`;
-  const climbs = day.climbs.length;
-  if (st.climbsTarget && climbs < st.climbsTarget) return `עוד ${plural(st.climbsTarget - climbs, 'עלייה אחת', 'עליות')}`;
+  const floors = floorsOf(day), fTarget = floorsTarget(st);
+  if (fTarget && floors < fTarget) return `עוד ${plural(fTarget - floors, 'קומה אחת', 'קומות')}`;
   if (st.proteinTarget && protein < st.proteinTarget) return `עוד ${int(st.proteinTarget - protein)} ג׳ חלבון`;
   const ml = waterMl(day);
   if (st.waterTarget && ml < st.waterTarget) return `עוד ${trim((st.waterTarget - ml) / 1000, 2)} ל׳ מים`;
@@ -380,30 +380,72 @@ function stepsCard(day, st, badge) {
   </section>`;
 }
 
+/** Stairs progress is measured in floors: target = climbsTarget × floorsRegular. */
 function stairsCard(day, st, badge) {
   const count = day.climbs.length;
-  const target = st.climbsTarget || 0;
+  const floors = floorsOf(day);
+  const target = floorsTarget(st);
   return `<section class="card role-accent">
     <div class="card-head">${icon('stairs', 'head-ic')}<h2>מדרגות</h2>${badge('climbs')}</div>
     <div class="row">
       ${ring({
-        id: 'climbs', size: 108, stroke: 11, frac: target ? count / target : 0,
-        color: target && count >= target ? 'var(--success)' : 'var(--accent)',
-        inner: `<div class="ring-mid"><bdi class="num">${fmt(count)}<small>/${fmt(target)}</small></bdi></div>`,
+        id: 'climbs', size: 108, stroke: 11, frac: target ? floors / target : 0,
+        color: target && floors >= target ? 'var(--success)' : 'var(--accent)',
+        inner: `<div class="ring-mid">${num(`${target ? Math.round(Math.min(1, floors / target) * 100) : 0}%`)}</div>`,
       })}
       <div class="grow">
-        <div class="stat-num">${num(floorsOf(day))}</div>
-        <div class="muted">קומות · ${num(count)} עליות</div>
+        <div class="stat-num" data-floors><bdi class="num">${fmt(floors)}<small>/${fmt(target)}</small></bdi><small> קומות</small></div>
+        <div class="muted" data-climbs-count>${count === 1 ? 'עלייה אחת' : `${num(count)} עליות`}</div>
       </div>
       <button type="button" class="icon-btn press" data-action="climb-undo" aria-label="ביטול עלייה אחרונה" ${count ? '' : 'disabled'}>${icon('undo')}</button>
     </div>
-    <div class="btn-pair">
+    <div class="btn-trio">
       <button type="button" class="big-add press" data-action="climb" data-type="regular">
         ${icon('plus')}<strong>עלייה רגילה</strong><span>${num(st.floorsRegular || 0)} קומות</span></button>
       <button type="button" class="big-add press" data-action="climb" data-type="roof">
         ${icon('roof')}<strong>עלייה לגג</strong><span>${num(st.floorsRoof || 0)} קומות</span></button>
+      <button type="button" class="big-add press" data-action="climb-custom">
+        ${icon('stairs')}<strong>אחר</strong><span>1–30 קומות</span></button>
     </div>
   </section>`;
+}
+
+/** Floors of the most recent custom climb in history (prefill), default 3. */
+function lastCustomFloors() {
+  const days = getState().days;
+  for (const k of Object.keys(days).sort().reverse()) {
+    const c = [...(days[k].climbs || [])].reverse().find((x) => x.type === 'custom' && Number(x.floors) > 0);
+    if (c) return Math.min(30, Math.max(1, Number(c.floors)));
+  }
+  return 3;
+}
+
+/** "אחר" climb: stepper 1–30 floors. Resolves the number, or null. */
+function customClimbSheet() {
+  const MIN = 1, MAX = 30;
+  let n = lastCustomFloors();
+  const sync = (w) => {
+    w.querySelector('[data-floors-val]').textContent = String(n);
+    w.querySelector('[data-step="-1"]').disabled = n <= MIN;
+    w.querySelector('[data-step="1"]').disabled = n >= MAX;
+  };
+  return openSheet({
+    title: 'עלייה אחרת',
+    body: `<div class="stepper" role="group" aria-label="מספר קומות">
+        <button type="button" class="stepper-btn press" data-step="1" aria-label="קומה נוספת">${icon('plus')}</button>
+        <div class="stepper-val"><output class="num" data-floors-val aria-live="polite">${n}</output><span>קומות</span></div>
+        <button type="button" class="stepper-btn press" data-step="-1" aria-label="קומה אחת פחות">${icon('minus')}</button>
+      </div>`,
+    actions: [{ label: 'הוספה', kind: 'primary', onClick: () => n }],
+    onOpen: (w) => {
+      sync(w);
+      w.querySelectorAll('[data-step]').forEach((btn) => btn.addEventListener('click', () => {
+        n = Math.min(MAX, Math.max(MIN, n + Number(btn.dataset.step)));
+        vibrate(5);
+        sync(w);
+      }));
+    },
+  });
 }
 
 function ridesCard(day, st, badge) {
@@ -616,14 +658,23 @@ async function onClick(e, ctx) {
   if (handleDateNav(a, ctx)) return rerender();
 
   switch (a) {
-    case 'climb': {
-      const type = b.dataset.type;
-      const floors = type === 'roof' ? st.floorsRoof || 0 : st.floorsRegular || 0;
-      updateDay(k, (d) => d.climbs.push({ type, floors }));
-      const count = getDay(k).climbs.length;
-      if (st.climbsTarget && count === st.climbsTarget) {
+    case 'climb':
+    case 'climb-custom': {
+      let entry;
+      if (a === 'climb-custom') {
+        const n = await customClimbSheet();
+        if (!n) return;
+        entry = { type: 'custom', floors: n };
+      } else {
+        const type = b.dataset.type;
+        entry = { type, floors: type === 'roof' ? st.floorsRoof || 0 : st.floorsRegular || 0 };
+      }
+      const before = floorsOf(getDay(k));
+      updateDay(k, (d) => d.climbs.push(entry));
+      const after = floorsOf(getDay(k)), target = floorsTarget(st);
+      if (target && before < target && after >= target) {
         vibrate(HAPTIC.target);
-        toast('יעד העליות הושג');
+        toast('יעד המדרגות הושג');
       } else vibrate(HAPTIC.item);
       return rerender();
     }

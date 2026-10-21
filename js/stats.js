@@ -110,7 +110,7 @@ export function computeRecords() {
   for (const k of Object.keys(state.days).sort()) {
     const day = state.days[k];
     consider('steps', 'הכי הרבה צעדים ביום', 'צעדים', day.steps || 0, k);
-    consider('climbs', 'הכי הרבה עליות ביום', 'עליות', (day.climbs || []).length, k);
+    consider('climbs', 'הכי הרבה קומות ביום', 'קומות', floorsOf(day), k);
     const ride = Math.max(0, ...(day.rides || []).map((r) => Number(r.km) || 0));
     consider('ride', 'הרכיבה הארוכה ביותר', 'ק״מ', ride, k);
 
@@ -146,8 +146,23 @@ export function foodTotals(k) {
   };
 }
 
+/**
+ * Floors of one climb entry: custom → its own floors; regular / roof → the floors stored when it was
+ * logged (as before), falling back to the current settings for entries without them.
+ */
+export function climbFloors(c, st = getState().settings || {}) {
+  if (Number(c?.floors) > 0) return Number(c.floors);
+  if (c?.type === 'custom') return 0;
+  return Number(c?.type === 'roof' ? st.floorsRoof : st.floorsRegular) || 0;
+}
+
 export function floorsOf(day) {
-  return (day.climbs || []).reduce((s, c) => s + (Number(c.floors) || 0), 0);
+  return (day.climbs || []).reduce((s, c) => s + climbFloors(c), 0);
+}
+
+/** Daily stairs target in floors = climbsTarget × floorsRegular (e.g. 6 × 6 = 36). */
+export function floorsTarget(st = getState().settings || {}) {
+  return (Number(st.climbsTarget) || 0) * (Number(st.floorsRegular) || 0);
 }
 
 /**
