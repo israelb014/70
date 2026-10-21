@@ -9,6 +9,7 @@ import { weeklySummary, copyText } from '../export.js';
 import { heatmapCard, bindHeatmap } from '../heatmap.js';
 import { levelInfo, weekXP, badgeStates, sleepMinutes, fmtDuration, averageBedtime, totalSleepMinutes, napsMinutes, hasSleep } from '../progress.js';
 import { medallion } from '../badgeArt.js';
+import { photosCard } from './photos.js';
 
 export function render(root, ctx) {
   const st = getState().settings;
@@ -20,6 +21,7 @@ export function render(root, ctx) {
     ${insightsSection()}
     ${heatmapCard()}
     ${achievementsCard()}
+    ${photosCard()}
     ${weightCard(st, weights)}
     <section class="card role-steps">
       <div class="card-head">${icon('steps', 'head-ic')}<h2>צעדים · 7 ימים</h2></div>
@@ -177,6 +179,8 @@ async function onClick(e, ctx) {
   switch (b.dataset.action) {
     case 'achievements':
       return ctx.goTab('achievements');
+    case 'photos':
+      return ctx.goTab('photos');
     case 'weight-add': {
       const last = getState().weights.at(-1)?.kg ?? getState().settings.startWeight;
       const res = await openSheet({

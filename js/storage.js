@@ -12,7 +12,7 @@ const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 export function blankState() {
   return {
     schemaVersion: SCHEMA_VERSION, settings: null, exercises: [], mealPresets: [], days: {}, weights: [],
-    customFoods: [], foodMemory: {},
+    customFoods: [], foodMemory: {}, photoSessions: [],
     // lastSeenLevel === null means "not initialised yet" (fresh install or migrated data).
     meta: { lastSeenLevel: null, seenBadges: [] },
   };
@@ -55,14 +55,20 @@ export function normalize(d) {
       seenBadges: Array.isArray(d.meta.seenBadges) ? d.meta.seenBadges.filter((b) => typeof b === 'string') : [],
     };
     // Optional ISO timestamps (no schema bump): last completed backup, backup reminder snoozed until.
-    for (const key of ['lastBackupAt', 'backupSnoozeUntil']) {
+    for (const key of ['lastBackupAt', 'backupSnoozeUntil', 'photoSnoozeUntil', 'lastPhotoBackupAt']) {
       if (typeof d.meta[key] === 'string' && !Number.isNaN(Date.parse(d.meta[key]))) s.meta[key] = d.meta[key];
     }
     // "Update target" prompt shown: { exerciseId: dayKey } (at most once per exercise per day).
     if (isObj(d.meta.targetPrompts)) s.meta.targetPrompts = { ...d.meta.targetPrompts };
+    if (d.meta.photoPersisted === true) s.meta.photoPersisted = true; // navigator.storage.persist() already asked
     // Keep the stored key order, so an exported backup re-imports byte-identical.
     s.meta = Object.fromEntries(Object.keys({ ...d.meta, ...s.meta }).filter((key) => key in s.meta).map((key) => [key, s.meta[key]]));
   }
+  // Progress photo sessions (metadata only; the photos themselves live in IndexedDB). Missing = none.
+  s.photoSessions = Array.isArray(d.photoSessions)
+    ? d.photoSessions.filter((x) => isObj(x) && DAY_KEY_RE.test(x.date) && Array.isArray(x.poses))
+      .map((x) => ({ date: x.date, poses: x.poses.filter((p) => ['front', 'side', 'back'].includes(p)) }))
+    : [];
   s.exercises = Array.isArray(d.exercises) ? d.exercises.filter((e) => isObj(e) && e.id && e.name) : [];
   s.mealPresets = Array.isArray(d.mealPresets) ? d.mealPresets.filter((m) => isObj(m) && m.id) : [];
   s.weights = Array.isArray(d.weights)
@@ -281,6 +287,13 @@ export function customFoodByBarcode(code) {
 export function rememberFood(key, amount, unit) {
   const prev = state.foodMemory[key];
   state.foodMemory[key] = { amount, unit, count: (prev?.count || 0) + 1 };
+  save();
+}
+
+/* ---------- Progress photo sessions ---------- */
+
+export function setPhotoSessions(list) {
+  state.photoSessions = [...list].sort((a, b) => a.date.localeCompare(b.date));
   save();
 }
 

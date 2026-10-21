@@ -19,6 +19,7 @@ import { dailySummary, copyText, exportBackup, canShareBackup, shareBackup, back
 import { plural, int, trim } from '../hebrew.js';
 import { openTimePicker, timeField } from '../timepicker.js';
 import { dayInsights } from '../insights.js';
+import { photoReminderCard, snoozeReminder, startFlow } from './photos.js';
 import { foodTotals, completionPct } from '../stats.js';
 import { todayKey } from '../dates.js';
 
@@ -36,6 +37,7 @@ export function render(root, ctx) {
 
   root.innerHTML = `
     ${backupBanner()}
+    ${photoReminderCard()}
     ${dateNav(k, '')}
     ${heroCard(k, day, st)}
     ${insightCard(k)}
@@ -809,6 +811,12 @@ async function onClick(e, ctx) {
         return rerender();
       }
       return;
+    case 'photo-now':
+      ctx.goTab('photos');
+      return startFlow(ctx);
+    case 'photo-later':
+      snoozeReminder();
+      return rerender();
     case 'backup-later':
       snoozeBackupReminder();
       return rerender();

@@ -6,6 +6,7 @@ import { levelInfo, walkHistory, BADGES } from './progress.js';
 import { medallion } from './badgeArt.js';
 import { celebrateLevel } from './celebrate.js';
 import * as achievements from './views/achievements.js';
+import * as photos from './views/photos.js';
 import * as today from './views/today.js';
 import * as food from './views/food.js';
 import * as trends from './views/trends.js';
@@ -20,7 +21,7 @@ const TABS = [
 ];
 
 // Screens reachable without a tab of their own.
-const SCREENS = { achievements };
+const SCREENS = { achievements, photos, compare: photos.compare };
 
 const main = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -97,6 +98,7 @@ function render() {
   renderTabbar();
   main.onkeydown = null;
   main.oninput = null;
+  ctx.fromTab = main.dataset.tab; // the screen shown before this render (photo screens re-veil when entered)
   main.dataset.tab = ctx.tab;
   (SCREENS[ctx.tab] || TABS.find((t) => t.id === ctx.tab).view).render(main, ctx);
   if (!main.classList.contains('settled')) countUp(main);

@@ -7,6 +7,8 @@ import { exerciseEditorHTML, handleExerciseAction } from '../exerciseEditor.js';
 import { exportBackup, readBackupFile, restoreBackup, canShareBackup, shareBackup, lastBackupDate } from '../export.js';
 import { APP_VERSION } from '../config.js';
 import { floorsTarget } from '../stats.js';
+import { photoSettingsCard, savePhotoSetting, backupPhotos, restorePhotos } from './photos.js';
+import { deleteAllPhotos } from '../photos.js';
 
 const GROUPS = [
   { title: 'משקל וגוף', icon: 'scale', keys: ['startWeight', 'targetWeight', 'height'] },
@@ -41,6 +43,7 @@ export function render(root, ctx) {
       </div>
       <input type="file" accept="application/json,.json" data-file hidden>
     </section>
+    ${photoSettingsCard()}
     <section class="card danger-card">
       <div class="card-head">${icon('alert', 'head-ic')}<h2>אזור מסוכן</h2></div>
       <button type="button" class="btn danger block press" data-action="wipe">${icon('trash')}<span>מחיקת כל הנתונים</span></button>
@@ -99,7 +102,12 @@ function floorsTargetText(st) {
 
 function onChange(e, ctx) {
   const t = e.target;
-  if (t.dataset.setting) {
+  if (t.dataset.photoSetting) {
+    savePhotoSetting(t);
+  } else if (t.matches('[data-photo-file]') && t.files?.[0]) {
+    restorePhotos(t.files[0], ctx);
+    t.value = '';
+  } else if (t.dataset.setting) {
     const key = t.dataset.setting;
     const r = validateField(key, t.value);
     if (!r.ok) {
@@ -159,8 +167,12 @@ async function onClick(e, ctx, root) {
     case 'import':
       root.querySelector('[data-file]').click();
       return;
+    case 'ph-backup':
+      return backupPhotos(ctx);
+    case 'ph-restore':
+      return document.querySelector('[data-photo-file]')?.click();
     case 'wipe': {
-      const first = await confirmDialog('כל הנתונים במכשיר יימחקו: הגדרות, תרגילים, היסטוריה ושקילות.', {
+      const first = await confirmDialog('כל הנתונים במכשיר יימחקו: הגדרות, תרגילים, היסטוריה, שקילות ותמונות התקדמות.', {
         title: 'מחיקת כל הנתונים', ok: 'המשך', danger: true,
       });
       if (!first) return;
@@ -169,6 +181,7 @@ async function onClick(e, ctx, root) {
       });
       if (!second) return;
       resetAll();
+      await deleteAllPhotos(); // progress photos too
       toast('כל הנתונים נמחקו');
       ctx.rerender();
     }

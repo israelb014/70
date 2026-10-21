@@ -11,6 +11,11 @@ const P = {
   chevL: '<path d="M15 5l-7 7 7 7"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
+  camera: '<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.8"/>',
+  gallery: '<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5-8.5 8.5"/>',
+  eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+  compare: '<rect x="3.5" y="4.5" width="7" height="15" rx="2"/><rect x="13.5" y="4.5" width="7" height="15" rx="2"/>',
+  wipe: '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M12 3v18M9.5 12l-2-2M9.5 12l-2 2M14.5 12l2-2M14.5 12l2 2"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   x: '<path d="M6 6l12 12M18 6L6 18"/>',
   trash: '<path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5"/>',
@@ -364,6 +369,7 @@ export function confetti(origin = { x: 0.5, y: 0.35 }) {
 /* ---------- Empty states & skeletons ---------- */
 
 const ART = {
+  photos: '<rect x="12" y="20" width="56" height="44" rx="10"/><circle cx="40" cy="42" r="11"/><path d="M28 20l4-7h16l4 7"/><path d="M58 30h.01"/>',
   insights: '<circle cx="40" cy="34" r="16"/><path d="M33 52h14M35 58h10M40 10v6M18 34h-6M68 34h-6M24 18l4 4M56 18l-4 4"/>',
   food: '<path d="M14 44h52a26 26 0 0 1-52 0z"/><path d="M28 30c0-6 6-6 6-12M40 30c0-6 6-6 6-12M52 30c0-6 6-6 6-12"/>',
   weight: '<rect x="14" y="14" width="52" height="52" rx="14"/><path d="M28 32a17 17 0 0 1 24 0L44 41"/><circle cx="40" cy="44" r="3"/>',
