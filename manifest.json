@@ -67,6 +67,18 @@
           "type": "image/png"
         }
       ]
+    },
+    {
+      "name": "נשימה",
+      "short_name": "נשימה",
+      "url": "./?action=breathe",
+      "icons": [
+        {
+          "src": "icons/shortcut-breathe.png",
+          "sizes": "96x96",
+          "type": "image/png"
+        }
+      ]
     }
   ],
   "launch_handler": {

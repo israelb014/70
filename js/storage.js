@@ -19,7 +19,7 @@ export function blankState() {
 }
 
 export function blankDay() {
-  return { rest: false, steps: null, climbs: [], rides: [], exercises: {}, food: [], sleep: null, naps: [], water: [] };
+  return { rest: false, steps: null, climbs: [], rides: [], exercises: {}, food: [], sleep: null, naps: [], water: [], breathing: [] };
 }
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -61,6 +61,8 @@ export function normalize(d) {
     // "Update target" prompt shown: { exerciseId: dayKey } (at most once per exercise per day).
     if (isObj(d.meta.targetPrompts)) s.meta.targetPrompts = { ...d.meta.targetPrompts };
     if (d.meta.photoPersisted === true) s.meta.photoPersisted = true; // navigator.storage.persist() already asked
+    // Last breathing technique + duration (setup prefill).
+    if (isObj(d.meta.breathLast)) s.meta.breathLast = { technique: String(d.meta.breathLast.technique || ''), minutes: Number(d.meta.breathLast.minutes) || 5 };
     // Keep the stored key order, so an exported backup re-imports byte-identical.
     s.meta = Object.fromEntries(Object.keys({ ...d.meta, ...s.meta }).filter((key) => key in s.meta).map((key) => [key, s.meta[key]]));
   }
@@ -94,6 +96,10 @@ export function normalize(d) {
         water: Array.isArray(day.water)
           ? day.water.filter((w) => isObj(w) && Number(w.ml) > 0)
             .map((w) => ({ ml: Number(w.ml), time: TIME_RE.test(w.time) ? w.time : null }))
+          : [],
+        breathing: Array.isArray(day.breathing)
+          ? day.breathing.filter((x) => isObj(x) && Number(x.minutes) > 0)
+            .map((x) => ({ technique: String(x.technique || 'calm'), minutes: Math.round(Number(x.minutes)), time: TIME_RE.test(x.time) ? x.time : null }))
           : [],
       };
     }

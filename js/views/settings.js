@@ -9,6 +9,7 @@ import { APP_VERSION } from '../config.js';
 import { floorsTarget } from '../stats.js';
 import { photoSettingsCard, savePhotoSetting, backupPhotos, restorePhotos } from './photos.js';
 import { deleteAllPhotos } from '../photos.js';
+import { breathSettingsCard, saveBreathSetting } from './breathe.js';
 
 const GROUPS = [
   { title: 'משקל וגוף', icon: 'scale', keys: ['startWeight', 'targetWeight', 'height'] },
@@ -43,6 +44,7 @@ export function render(root, ctx) {
       </div>
       <input type="file" accept="application/json,.json" data-file hidden>
     </section>
+    ${breathSettingsCard()}
     ${photoSettingsCard()}
     <section class="card danger-card">
       <div class="card-head">${icon('alert', 'head-ic')}<h2>אזור מסוכן</h2></div>
@@ -102,7 +104,9 @@ function floorsTargetText(st) {
 
 function onChange(e, ctx) {
   const t = e.target;
-  if (t.dataset.photoSetting) {
+  if (t.dataset.breathSetting) {
+    saveBreathSetting(t);
+  } else if (t.dataset.photoSetting) {
     savePhotoSetting(t);
   } else if (t.matches('[data-photo-file]') && t.files?.[0]) {
     restorePhotos(t.files[0], ctx);

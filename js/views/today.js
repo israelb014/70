@@ -20,6 +20,7 @@ import { plural, int, trim } from '../hebrew.js';
 import { openTimePicker, timeField } from '../timepicker.js';
 import { dayInsights } from '../insights.js';
 import { photoReminderCard, snoozeReminder, startFlow } from './photos.js';
+import { breathCard, startBreathing } from './breathe.js';
 import { foodTotals, completionPct } from '../stats.js';
 import { todayKey } from '../dates.js';
 
@@ -44,6 +45,7 @@ export function render(root, ctx) {
     ${stepsCard(day, st, badge)}
     ${sleepCard(day, st)}
     ${waterCard(day, st)}
+    ${breathCard(day, k)}
     ${stairsCard(day, st, badge)}
     ${ridesCard(day, st, badge)}
     ${exerciseCards(k, day, ctx, rec)}
@@ -811,6 +813,8 @@ async function onClick(e, ctx) {
         return rerender();
       }
       return;
+    case 'breath-start':
+      return startBreathing(ctx);
     case 'photo-now':
       ctx.goTab('photos');
       return startFlow(ctx);

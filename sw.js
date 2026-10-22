@@ -43,6 +43,8 @@ const APP_FILES = [
   './js/photos.js',
   './js/photodb.js',
   './js/zip.js',
+  './js/breathing.js',
+  './js/views/breathe.js',
   './icons/icon.svg',
   './icons/icon-192.png',
   './icons/icon-512.png',
@@ -50,6 +52,7 @@ const APP_FILES = [
   './icons/shortcut-water.png',
   './icons/shortcut-food.png',
   './icons/shortcut-scan.png',
+  './icons/shortcut-breathe.png',
 ];
 
 // The food database (data/foods.json + data/foods-meta.json) is not precached: it loads lazily

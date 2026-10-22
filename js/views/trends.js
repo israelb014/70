@@ -10,6 +10,7 @@ import { heatmapCard, bindHeatmap } from '../heatmap.js';
 import { levelInfo, weekXP, badgeStates, sleepMinutes, fmtDuration, averageBedtime, totalSleepMinutes, napsMinutes, hasSleep } from '../progress.js';
 import { medallion } from '../badgeArt.js';
 import { photosCard } from './photos.js';
+import { breathTrendCard } from './breathe.js';
 
 export function render(root, ctx) {
   const st = getState().settings;
@@ -34,6 +35,7 @@ export function render(root, ctx) {
       <p class="legend"><span class="lg-line"></span>יעד ${num(st.proteinTarget || 0)} ג׳</p>
     </section>
     ${sleepTrendCard(st, keys)}
+    ${breathTrendCard(keys)}
     ${waterTrendCard(st, keys)}
     ${recordsCard()}
     <button type="button" class="btn primary block press" data-action="copy-summary">${icon('copy')}<span>העתק סיכום שבועי</span></button>`;

@@ -6,6 +6,7 @@ import { fmt } from './ui.js';
 import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES, dayXP, durText, napMinutes, napsMinutes, totalSleepMinutes, sortedNaps } from './progress.js';
 import { int, dec1, dec2, trim, iso, plural, unitAmount } from './hebrew.js';
 import { dayInsights, weekInsights } from './insights.js';
+import { breathMinutes, techniqueById } from './breathing.js';
 
 // Right-to-left mark: makes a line that starts with Latin text ("XP …") lay out right-to-left.
 const RLM = '\u200F';
@@ -62,6 +63,18 @@ function weekSleepLine(day) {
   return `שינה: ${iso(fmtDuration(totalSleepMinutes(day)))} שעות (${parts.join(' + ')})`;
 }
 
+const minutesText = (m) => plural(m, 'דקה אחת', 'דקות');
+
+/** "נשימה: 10 דקות (נשימה רגועה 5, נשימת קופסה 5)" / "נשימה: 5 דקות (נשימה רגועה)"; '' when none. */
+function breathLine(day) {
+  const total = breathMinutes(day);
+  if (!total) return '';
+  const by = new Map();
+  for (const b of day.breathing) by.set(b.technique, (by.get(b.technique) || 0) + b.minutes);
+  const parts = [...by].map(([t, m]) => (by.size === 1 ? techniqueById(t).name : `${techniqueById(t).name} ${int(m)}`));
+  return `נשימה: ${minutesText(total)} (${parts.join(', ')})`;
+}
+
 /** "9 כוסות" / "כוס אחת" / "1.5 כוסות" — 250 ml per glass, one decimal. */
 const cupsText = (ml) => plural(Math.round((ml / 250) * 10) / 10, 'כוס אחת', 'כוסות', (n) => trim(n, 1));
 
@@ -109,6 +122,8 @@ export function dailySummary(k) {
 
   const ml = waterMl(day);
   if (ml) sections.push([`מים: ${dec2(ml / 1000)} ל׳ / ${trim((st.waterTarget || 2500) / 1000)} ל׳ (${cupsText(ml)})`]);
+  const bl = breathLine(day);
+  if (bl) sections.push([bl]);
 
   // אוכל ושתייה (always present)
   const food = ['אוכל ושתייה:'];
@@ -166,6 +181,8 @@ export function weeklySummary() {
     if (sw) body.push(sw);
     const ml = waterMl(day);
     if (ml) body.push(`מים: ${dec2(ml / 1000)} ל׳ (${cupsText(ml)})`);
+    const bm = breathMinutes(day);
+    if (bm) body.push(`נשימה: ${minutesText(bm)}`);
     const ft = foodTotals(k);
     if (day.food.length) body.push(`אוכל: ${fmt(ft.kcal)} קק״ל · ${fmt(ft.protein)} ג׳ חלבון`);
     if (!body.length) body.push('אין נתונים');
@@ -199,6 +216,8 @@ export function weeklySummary() {
   if (newBadges.length) for (const b of newBadges) lines.push(`• ${b.name} (${shortDate(walk.earned[b.id])})`);
   else lines.push('• אין תגים חדשים השבוע');
 
+  const weekBreath = keys.reduce((a, k) => a + breathMinutes(getDay(k)), 0);
+  if (weekBreath) lines.push('', `נשימה השבוע: ${minutesText(weekBreath)}`);
   return lines.join('\n');
 }
 

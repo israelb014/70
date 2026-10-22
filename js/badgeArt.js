@@ -10,6 +10,10 @@ const ICONS = {
   pushups: '<circle cx="5" cy="8.5" r="1.8"/><path d="M7 10l12 3.5M9.5 10.8V17M17 13v4M2.5 19h19"/>',
   plank: '<circle cx="4.5" cy="10.5" r="1.8"/><path d="M6.5 12h13.5M7.5 12v4.5H11M20 12v4.5M2.5 19h19"/><path d="M15 3.5h4M17 3.5V6"/>',
   protein: '<path d="M12 3c3.6 0 6 5.4 6 9.5a6 6 0 0 1-12 0C6 8.4 8.4 3 12 3z"/><path d="M10 12.5h2.6a1.6 1.6 0 0 0 0-3.2H10V16"/>',
+  breathFirst: '<path d="M3 9h9.5a2.5 2.5 0 1 0-2.5-2.5M3 13h13a3 3 0 1 1-3 3"/><path d="M18.5 3.5l.8 1.7 1.7.8-1.7.8-.8 1.7-.8-1.7-1.7-.8 1.7-.8z" stroke-linejoin="round"/>',
+  breathStreak: '<circle cx="12" cy="12" r="8.5"/><path d="M7.5 12c1.5-2 3-2 4.5 0s3 2 4.5 0"/><path d="M12 3.5v2M12 18.5v2"/>',
+  breathTotal: '<circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="8.5" stroke-dasharray="3 2.4"/>',
+  breathGoal: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M10 12.2l1.4 1.4 2.8-3"/>',
   sleep: '<path d="M18.5 14.5A7.5 7.5 0 0 1 9 5a7.5 7.5 0 1 0 9.5 9.5z"/><path d="M15.5 3.5h3l-3 3.5h3M19.5 8.5h2l-2 2.3h2"/>',
 };
 

@@ -17,6 +17,7 @@ export const SETTINGS_FIELDS = {
   floorsRoof: { label: 'קומות בעלייה לגג', unit: 'קומות', def: 10, required: true, step: 1, min: 1 },
   sleepTarget: { label: 'יעד שינה', unit: 'שעות', def: 8, step: 0.5, min: 3, max: 14 },
   waterTarget: { label: 'יעד מים יומי', unit: 'מ״ל', def: 2500, step: 50, min: 250, max: 10000 },
+  breathGoal: { label: 'יעד נשימה יומי', unit: 'דקות', def: 5, step: 1, min: 1, max: 120 },
 };
 
 export function fieldHTML(key, value) {
@@ -43,6 +44,7 @@ const STEPS = [
   { title: 'מדרגות', text: 'כמה עליות ביום, וכמה קומות בכל סוג עלייה.', fields: ['climbsTarget', 'floorsRegular', 'floorsRoof'] },
   { title: 'שינה', text: 'כמה שעות שינה בלילה? אפשר להשאיר 8 ולהמשיך.', fields: ['sleepTarget'] },
   { title: 'תרגילים', text: 'הוסיפו את התרגילים הקבועים. אפשר גם לדלג ולהוסיף בהמשך בהגדרות.', exercises: true },
+  { title: 'נשימה', text: 'כמה דקות נשימה ביום? אפשר להשאיר 5 דקות ולהמשיך.', fields: ['breathGoal'] },
   { title: 'מים', text: 'כמה מים ביום? אפשר להשאיר 2,500 מ״ל ולסיים.', fields: ['waterTarget'] },
 ];
 
@@ -121,7 +123,7 @@ export function render(root, onDone) {
         return invalid(root.querySelector('[name=targetWeight]'), 'משקל היעד צריך להיות שונה מהמשקל ההתחלתי');
       }
       if (last) {
-        updateSettings({ ...wiz.draft, sleepTarget: wiz.draft.sleepTarget || 8, waterTarget: wiz.draft.waterTarget || 2500 });
+        updateSettings({ ...wiz.draft, sleepTarget: wiz.draft.sleepTarget || 8, waterTarget: wiz.draft.waterTarget || 2500, breathGoal: wiz.draft.breathGoal || 5 });
         wiz.step = 0;
         wiz.draft = {};
         return onDone();

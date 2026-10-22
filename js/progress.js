@@ -5,6 +5,7 @@ import { getState, getDay, exerciseById } from './storage.js';
 import { todayKey, addDays, lastNDays } from './dates.js';
 import { exerciseProgress, dayCompletion, isDayActive, foodTotals, floorsOf, floorsTarget } from './stats.js';
 import { plural } from './hebrew.js';
+import { breathMinutes, breathGoal } from './breathing.js';
 
 /* ---------- Sleep ---------- */
 
@@ -126,6 +127,7 @@ export function dayXP(k) {
   const comp = dayCompletion(k);
   if (comp.total > 0 && comp.done === comp.total) xp += 20;
   if (hasSleep(day)) xp += 2; // once per day, night or naps
+  xp += Math.min(15, breathMinutes(day)); // breathing: 1 XP per minute, max 15 a day
   return xp;
 }
 
@@ -182,6 +184,10 @@ export const BADGES = [
     id: `plank${n}`, family: 'plank', tier: String(n), name: `פלאנק ${n}`, desc: `החזקה של ${n} שניות בתרגיל ששמו כולל "פלאנק".`, metric: 'plankMax', target: n, unit: 'שנ׳',
   })),
   { id: 'proteinWeek', family: 'protein', tier: '7', name: 'שבוע חלבון', desc: 'עמידה ביעד החלבון 7 ימים ברצף.', metric: 'proteinStreak', target: 7 },
+  { id: 'breath1', family: 'breathFirst', tier: '1', name: 'נשימה ראשונה', desc: 'סשן נשימה ראשון.', metric: 'breathSessions', target: 1 },
+  { id: 'breathStreak7', family: 'breathStreak', tier: '7', name: 'רצף נשימה 7', desc: '7 ימים ברצף עם לפחות סשן נשימה אחד.', metric: 'breathStreak', target: 7 },
+  { id: 'breath100', family: 'breathTotal', tier: '100', name: '100 דקות נשימה', desc: '100 דקות נשימה בסך הכול.', metric: 'breathTotal', target: 100 },
+  { id: 'breathGoal7', family: 'breathGoal', tier: '7', name: 'יעד נשימה שבוע', desc: 'עמידה ביעד הנשימה היומי 7 ימים ברצף.', metric: 'breathGoalStreak', target: 7 },
   { id: 'sleepWeek', family: 'sleep', tier: '7', name: 'ישן כמו שצריך', desc: 'עמידה ביעד השינה 7 לילות ברצף.', metric: 'sleepStreak', target: 7 },
 ];
 
@@ -198,10 +204,12 @@ export function walkHistory() {
   const m = {
     workoutDays: 0, streak: 0, kgLost: 0, rideMax: 0, climbsTotal: 0, stepsTotal: 0,
     pushupMax: 0, plankMax: 0, proteinStreak: 0, sleepStreak: 0,
+    breathSessions: 0, breathStreak: 0, breathTotal: 0, breathGoalStreak: 0,
   };
   const earned = {};
   if (!first) return { metrics: m, earned, longestStreak: 0 };
 
+  let breathRun = 0, breathGoalRun = 0;
   let run = 0, proteinRun = 0, sleepRun = 0, wi = 0, minKg = Infinity, floorsTotal = 0, legacyClimbs = 0;
   const seen = new Set(state.meta?.seenBadges || []);
   const end = todayKey();
@@ -237,6 +245,13 @@ export function walkHistory() {
     }
     proteinRun = st.proteinTarget && day && foodTotals(k).protein >= st.proteinTarget ? proteinRun + 1 : 0;
     m.proteinStreak = Math.max(m.proteinStreak, proteinRun);
+    const bm = breathMinutes(day);
+    m.breathSessions += (day?.breathing || []).length;
+    m.breathTotal += bm;
+    breathRun = bm > 0 ? breathRun + 1 : 0;
+    m.breathStreak = Math.max(m.breathStreak, breathRun);
+    breathGoalRun = bm >= breathGoal(st) ? breathGoalRun + 1 : 0;
+    m.breathGoalStreak = Math.max(m.breathGoalStreak, breathGoalRun);
     sleepRun = sleepTargetMet(day, st) ? sleepRun + 1 : 0;
     m.sleepStreak = Math.max(m.sleepStreak, sleepRun);
     while (wi < weights.length && weights[wi].date <= k) minKg = Math.min(minKg, weights[wi++].kg);

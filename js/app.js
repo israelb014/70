@@ -12,6 +12,7 @@ import * as food from './views/food.js';
 import * as trends from './views/trends.js';
 import * as settings from './views/settings.js';
 import * as wizard from './views/wizard.js';
+import { startBreathing } from './views/breathe.js';
 
 const TABS = [
   { id: 'today', label: 'היום', icon: 'today', view: today },
@@ -170,15 +171,18 @@ document.addEventListener('visibilitychange', () => {
 setSaveErrorHandler(() => toast('השמירה נכשלה — ייתכן שהאחסון מלא'));
 
 /**
- * Home-screen shortcuts (manifest "shortcuts"): ./?action=water | food | scan.
+ * Home-screen shortcuts (manifest "shortcuts"): ./?action=water | food | scan | breathe.
  * Unknown or missing actions start normally; nothing happens before the setup wizard is done.
  */
 function runAction(action) {
-  if (!getState().settings || !['water', 'food', 'scan'].includes(action)) return;
+  if (!getState().settings || !['water', 'food', 'scan', 'breathe'].includes(action)) return;
   document.querySelectorAll('.sheet-backdrop').forEach((s) => s.remove());
   document.body.classList.remove('no-scroll');
   ctx.date = todayKey();
-  if (action === 'water') {
+  if (action === 'breathe') {
+    ctx.goTab('today');
+    startBreathing(ctx);
+  } else if (action === 'water') {
     ctx.goTab('today');
     const card = main.querySelector('.water-card');
     if (!card) return;

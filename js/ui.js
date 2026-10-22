@@ -11,6 +11,8 @@ const P = {
   chevL: '<path d="M15 5l-7 7 7 7"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   minus: '<path d="M5 12h14"/>',
+  breath: '<path d="M3 9h10a3 3 0 1 0-3-3M3 13h15a3 3 0 1 1-3 3M3 17h6"/>',
+  pause: '<path d="M9 6v12M15 6v12"/>',
   camera: '<path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.8l1.4-2h4.6l1.4 2h1.8A2.5 2.5 0 0 1 20 8.5v9a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5z"/><circle cx="12" cy="13" r="3.8"/>',
   gallery: '<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5-8.5 8.5"/>',
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
@@ -64,6 +66,7 @@ P.trendsOutline = '<path d="M3 20h18"/><rect x="4.5" y="12" width="3.5" height="
 // Insight categories
 P['cat-sleep'] = '<path d="M19 14.5A7.5 7.5 0 0 1 9.5 5a7.5 7.5 0 1 0 9.5 9.5z"/><path d="M16 3.5h3l-3 3.5h3"/>';
 P['cat-food'] = '<path d="M12 7c-1.5-2.5-6-2.5-7 1.5-1 4 1.5 9.5 4 11 1 .6 2 .2 3-.5 1 .7 2 1.1 3 .5 2.5-1.5 5-7 4-11-1-4-5.5-4-7-1.5z"/><path d="M12 7c0-2 1-3.5 2.5-4"/>';
+P['cat-breath'] = '<path d="M3 9h10a3 3 0 1 0-3-3M3 13h15a3 3 0 1 1-3 3M3 17h6"/>';
 P['cat-activity'] = '<path d="M3 12h4l2.5-6 4 12 2.5-6H21"/>';
 P['cat-strength'] = '<path d="M3 9.5v5M6 7v10M18 7v10M21 9.5v5M6 12h12"/>';
 P['cat-weight'] = '<rect x="3.5" y="3.5" width="17" height="17" rx="5"/><path d="M8.5 9.5a5 5 0 0 1 7 0L13 12"/>';

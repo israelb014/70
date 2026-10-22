@@ -3,6 +3,7 @@
 // cat (icon category): sleep | food | activity | strength | weight | consistency
 import { getState, getDay, activeExercises, exerciseById } from './storage.js';
 import { addDays, lastNDays, todayKey, weekdayName, parseKey } from './dates.js';
+import { breathMinutes, sleepAfterBreathing } from './breathing.js';
 import { foodTotals, dayCompletion, exercisesForDay, computeRecords, waterMl, floorsOf, floorsTarget } from './stats.js';
 import { sleepMinutes, fmtDuration, walkHistory, BADGES, durText, totalSleepMinutes, hasSleep, napsMinutes } from './progress.js';
 import { int, trim, plural } from './hebrew.js';
@@ -193,6 +194,7 @@ export function weekInsights(today = todayKey()) {
     { id: 'completion', cat: 'strength', has: (d, k) => !d.rest && dayCompletion(k).total > 0 && Object.keys(d.exercises || {}).length > 0, val: (k) => dayCompletion(k).fraction, agg: 'avg', name: 'אחוז השלמת האימונים', good: true },
     { id: 'sleep', cat: 'sleep', has: (d) => hasSleep(d), val: (k, d) => totalSleepMinutes(d), agg: 'avg', name: 'ממוצע השינה', good: true },
     { id: 'water', cat: 'food', has: (d) => waterMl(d) > 0, val: (k, d) => waterMl(d), agg: 'avg', name: 'ממוצע המים היומי', good: true },
+    { id: 'breath', cat: 'breath', has: (d) => breathMinutes(d) > 0, val: (k, d) => breathMinutes(d), agg: 'sum', name: 'דקות הנשימה', good: true },
   ];
   for (const m of metrics) {
     const series = (keys) => keys.filter((k) => days()[k] && m.has(days()[k], k)).map((k) => m.val(k, days()[k]));
@@ -210,12 +212,20 @@ export function weekInsights(today = todayKey()) {
     // Percent-of-a-percent and percent-of-hours read badly — show the actual values for those.
     const text = m.id === 'completion'
       ? `השלמת האימונים ${up ? 'עלתה' : 'ירדה'} מ-${Math.round(vb * 100)}% ל-${Math.round(va * 100)}% לעומת השבוע הקודם`
+      : m.id === 'breath'
+        ? `השבוע נשמת ${int(va)} דקות, ${Math.abs(pct)}% ${up ? 'יותר' : 'פחות'} משבוע שעבר`
       : m.id === 'climbs'
         ? `השבוע עלית ${int(va)} קומות, ${Math.abs(pct)}% ${up ? 'יותר' : 'פחות'} משבוע שעבר`
       : m.id === 'sleep'
         ? `ממוצע השינה ${up ? 'עלה' : 'ירד'} מ-${fmtDuration(vb)} ל-${fmtDuration(va)} שעות לעומת השבוע הקודם`
         : `${m.name} ${up ? 'עלה' : 'ירד'} ב-${Math.abs(pct)}% לעומת השבוע הקודם`;
     out.push(week(`wow:${m.id}`, text, kind, base + Math.min(15, Math.round(Math.abs(pct) / 10)), m.cat));
+  }
+
+  // Breathing → that night's sleep (all history, ≥ 5 nights per group, |diff| ≥ 20 min). Factual, no claims.
+  const bs = sleepAfterBreathing();
+  if (bs && Math.abs(bs.diff) >= 20) {
+    out.push(week('breathSleep', `בלילות שאחרי יום עם נשימה ישנת בממוצע ${durText(Math.abs(bs.diff))} ${bs.diff > 0 ? 'יותר' : 'פחות'} מאשר אחרי יום בלי נשימה`, 'neutral', 52, 'breath'));
   }
 
   // 2 + 3. Night sleep (naps excluded) → next-day calories / same-day workout completion (all history, ≥ 3 days per group)
