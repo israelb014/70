@@ -1,10 +1,10 @@
 // "מגמות" tab: weight progress + chart, 7-day steps and protein, personal records, weekly summary.
 import { getState, getDay, addWeight, deleteWeight } from '../storage.js';
 import { ring, barChart, weightChart, bindChartTips } from '../charts.js';
-import { icon, esc, num, parseNum, toast, openSheet, confirmDialog, invalid, emptyState } from '../ui.js';
+import { icon, esc, num, frac, parseNum, toast, openSheet, confirmDialog, invalid, emptyState } from '../ui.js';
 import { weekInsights } from '../insights.js';
 import { lastNDays, todayKey, shortDate } from '../dates.js';
-import { computeRecords, foodTotals, waterMl } from '../stats.js';
+import { computeRecords, foodTotals, waterMl, drinksMl, fluidsMl } from '../stats.js';
 import { weeklySummary, copyText } from '../export.js';
 import { heatmapCard, bindHeatmap } from '../heatmap.js';
 import { levelInfo, weekXP, badgeStates, sleepMinutes, fmtDuration, averageBedtime, totalSleepMinutes, napsMinutes, hasSleep } from '../progress.js';
@@ -80,17 +80,22 @@ function achievementsCard() {
 
 function waterTrendCard(st, keys) {
   const target = (st.waterTarget || 2500) / 1000;
-  const liters = keys.map((k) => waterMl(getDay(k)) / 1000);
+  // Bars = total fluids; drinks from "אוכל" are a lighter segment on top of the water card part.
+  const liters = keys.map((k) => fluidsMl(getDay(k)) / 1000);
+  const drinks = keys.map((k) => drinksMl(getDay(k)) / 1000);
   const logged = liters.filter((l) => l > 0);
   const avg = logged.length ? logged.reduce((a, b) => a + b, 0) / logged.length : 0;
   const f2 = (v) => v.toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const tips = keys.map((k, i) => (drinks[i] > 0
+    ? `${shortDate(k)} · מים ${f2(waterMl(getDay(k)) / 1000)} · משקאות ${f2(drinks[i])} · סה״כ ${f2(liters[i])} ל׳`
+    : null));
   return `<section class="card role-water">
     <div class="card-head">${icon('drop', 'head-ic')}<h2>מים · 7 ימים</h2></div>
-    ${barChart({ keys, values: liters, target, color: 'var(--water)', format: (v) => f2(v), unit: 'ל׳' })}
+    ${barChart({ keys, values: liters, target, color: 'var(--water)', format: (v) => f2(v), unit: 'ל׳', stack: drinks, stackColor: 'var(--water-light)', tips })}
     <p class="legend"><span class="lg-line"></span>יעד ${num(target, 2)} ל׳</p>
     <div class="hm-stats">
       <div><span class="stat-num">${logged.length ? num(f2(avg)) : '–'}</span><span class="muted small">ממוצע ליטרים ליום</span></div>
-      <div><span class="stat-num"><bdi class="num">${logged.length}<small>/7</small></bdi></span><span class="muted small">ימים עם תיעוד</span></div>
+      <div><span class="stat-num">${frac(logged.length, 7)}</span><span class="muted small">ימים עם תיעוד</span></div>
     </div>
   </section>`;
 }

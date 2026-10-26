@@ -3,7 +3,7 @@ import { getState, getDay, updateDay, save, exerciseById, updateMeta } from '../
 import { ring, concentricRings } from '../charts.js';
 import {
   icon, esc, fmt, num, parseNum, toast, vibrate, openSheet, confirmDialog, invalid,
-  checkMark, dateNav, handleDateNav, HAPTIC, confetti, emptyState, bindSwipe,
+  checkMark, dateNav, handleDateNav, HAPTIC, confetti, emptyState, bindSwipe, frac,
 } from '../ui.js';
 import {
   dayCompletion, currentStreak, exercisesForDay, exerciseProgress, computeRecords, recordIdsOn,
@@ -13,7 +13,7 @@ import { runTimer } from '../timer.js';
 import {
   levelInfo, sleepMinutes, fmtDuration, lastSleep, durText, napMinutes, napsMinutes, totalSleepMinutes, hasSleep, sortedNaps, lastNap, napError,
 } from '../progress.js';
-import { waterMl } from '../stats.js';
+import { waterMl, drinksMl, fluidsMl } from '../stats.js';
 import { nowTime } from '../dates.js';
 import { dailySummary, copyText, exportBackup, canShareBackup, shareBackup, backupReminder, snoozeBackupReminder } from '../export.js';
 import { plural, int, trim } from '../hebrew.js';
@@ -127,10 +127,10 @@ function levelChip() {
 }
 
 /** durText with the number isolated LTR ("1:20" must not flip inside RTL text). */
-const durHTML = (m) => esc(durText(m)).replace(/[\d:]+/, (d) => `<bdi class="num">${d}</bdi>`);
+const durHTML = (m) => esc(durText(m)).replace(/[\d:]+/, (d) => `<bdi class="num" dir="ltr">${d}</bdi>`);
 
 /** "יעד 8 שעות" / "יעד שעה אחת" (number isolated). The big number already shows the night duration. */
-const targetHTML = (h) => `יעד ${esc(plural(h, 'שעה אחת', 'שעות')).replace(/[\d.,]+/, (d) => `<bdi class="num">${d}</bdi>`)}`;
+const targetHTML = (h) => `יעד ${esc(plural(h, 'שעה אחת', 'שעות')).replace(/[\d.,]+/, (d) => `<bdi class="num" dir="ltr">${d}</bdi>`)}`;
 
 function sleepCard(day, st) {
   const target = st.sleepTarget || 8;
@@ -163,7 +163,7 @@ function sleepCard(day, st) {
     <button type="button" class="btn secondary block press" data-action="sleep-save">${icon('check')}<span>${s ? 'עדכון שינה' : 'שמירת שינה'}</span></button>
     ${naps.length ? `<ul class="nap-list">${naps.map(({ n, i }) => `<li class="swipe-item"><span class="swipe-bg" aria-hidden="true">${icon('trash')}</span>
       <div class="list-row swipe nap-row press" role="button" tabindex="0" data-action="nap-edit" data-nap-i="${i}" aria-label="עריכת תנומה ${n.start}–${n.end}">
-        ${icon('moon')}<span class="grow">תנומה · <bdi class="num">${n.start}–${n.end}</bdi> · ${durHTML(napMinutes(n))}</span>
+        ${icon('moon')}<span class="grow">תנומה · <bdi class="num" dir="ltr">${n.start}–${n.end}</bdi> · ${durHTML(napMinutes(n))}</span>
       </div></li>`).join('')}</ul>` : ''}
     <button type="button" class="btn ghost block press" data-action="nap-new">${icon('plus')}<span>תנומה</span></button>
   </section>`;
@@ -232,9 +232,11 @@ function removeNap(ctx, k, i) {
 const GLASS = 250, BOTTLE = 500;
 const liters = (ml) => (ml / 1000).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** Water card: the ring shows TOTAL fluids (water added here + drinks from "אוכל"); the line shows the breakdown. */
 function waterCard(day, st) {
   const target = st.waterTarget || 2500;
-  const ml = waterMl(day);
+  const water = waterMl(day), drinks = drinksMl(day);
+  const ml = water + drinks;
   const last = day.water.at(-1);
   return `<section class="card water-card role-water">
     <div class="card-head">${icon('drop', 'head-ic')}<h2>מים</h2>
@@ -246,11 +248,11 @@ function waterCard(day, st) {
         inner: `<div class="ring-big xs">${num(liters(ml))}</div><div class="muted small">ל׳</div>`,
       })}
       <div class="grow">
-        <div class="stat-num">${num(ml)}<small> מ״ל</small></div>
-        <div class="muted">מתוך ${num(target / 1000, 2)} ל׳ · ${esc(plural(Math.round((ml / GLASS) * 10) / 10, 'כוס אחת', 'כוסות'))}</div>
+        <div class="muted" data-water-of>מתוך ${num(target / 1000, 2)} ל׳ · ${esc(plural(Math.round((ml / GLASS) * 10) / 10, 'כוס אחת', 'כוסות', (n) => trim(n, 1)))}</div>
         ${last ? `<div class="muted small">אחרון: ${num(last.ml)} מ״ל${last.time ? ` בשעה ${num(last.time)}` : ''}</div>` : ''}
       </div>
     </div>
+    <div class="water-split" data-water-split>מים ${num(liters(water))} ל׳ · משקאות ${num(liters(drinks))} ל׳</div>
     <div class="water-btns">
       <button type="button" class="water-add press" data-action="water-add" data-ml="${GLASS}">${icon('glass')}<strong>+ כוס</strong><span>${num(GLASS)} מ״ל</span></button>
       <button type="button" class="water-add press" data-action="water-add" data-ml="${BOTTLE}">${icon('bottle')}<strong>+ בקבוק</strong><span>${num(BOTTLE)} מ״ל</span></button>
@@ -261,9 +263,9 @@ function waterCard(day, st) {
 
 function addWater(ctx, ml) {
   const st = getState().settings;
-  const before = waterMl(getDay(ctx.date));
+  const before = fluidsMl(getDay(ctx.date));
   updateDay(ctx.date, (d) => d.water.push({ ml, time: nowTime() }));
-  const after = waterMl(getDay(ctx.date));
+  const after = fluidsMl(getDay(ctx.date));
   const target = st.waterTarget || 2500;
   if (before < target && after >= target) {
     vibrate(HAPTIC.target);
@@ -304,7 +306,7 @@ function heroCard(k, day, st) {
           { id: 'hero-steps', frac: st.stepsTarget ? steps / st.stepsTarget : 0, color: 'var(--steps)' },
           { id: 'hero-protein', frac: st.proteinTarget ? protein / st.proteinTarget : 0, color: 'var(--protein)' },
         ],
-        inner: `<div class="ring-big"><bdi class="num" data-count="${pct}">${pct}</bdi><small>%</small></div>
+        inner: `<div class="ring-big"><bdi class="num" dir="ltr" data-count="${pct}">${pct}</bdi><small>%</small></div>
           <div class="caption">${c.total ? 'אימון' : 'אין תרגילים'}</div>`,
       })}
       <div class="hero-side">
@@ -336,8 +338,8 @@ export function statusLine(day, st, c, steps, protein) {
   const floors = floorsOf(day), fTarget = floorsTarget(st);
   if (fTarget && floors < fTarget) return `עוד ${plural(fTarget - floors, 'קומה אחת', 'קומות')}`;
   if (st.proteinTarget && protein < st.proteinTarget) return `עוד ${int(st.proteinTarget - protein)} ג׳ חלבון`;
-  const ml = waterMl(day);
-  if (st.waterTarget && ml < st.waterTarget) return `עוד ${trim((st.waterTarget - ml) / 1000, 2)} ל׳ מים`;
+  const ml = fluidsMl(day);
+  if (st.waterTarget && ml < st.waterTarget) return `עוד ${trim((st.waterTarget - ml) / 1000, 2)} ל׳ נוזלים`;
   return 'כל היעדים של היום הושגו';
 }
 
@@ -398,7 +400,7 @@ function stairsCard(day, st, badge) {
         inner: `<div class="ring-mid">${num(`${target ? Math.round(Math.min(1, floors / target) * 100) : 0}%`)}</div>`,
       })}
       <div class="grow">
-        <div class="stat-num" data-floors><bdi class="num">${fmt(floors)}<small>/${fmt(target)}</small></bdi><small> קומות</small></div>
+        <div class="stat-num" data-floors>${frac(fmt(floors), fmt(target))}<small> קומות</small></div>
         <div class="muted" data-climbs-count>${count === 1 ? 'עלייה אחת' : `${num(count)} עליות`}</div>
       </div>
       <button type="button" class="icon-btn press" data-action="climb-undo" aria-label="ביטול עלייה אחרונה" ${count ? '' : 'disabled'}>${icon('undo')}</button>
@@ -620,7 +622,7 @@ function setsBody(ex, entry, showHint) {
 function timedBody(ex, entry) {
   const sec = entry?.seconds || 0;
   return `<div class="row">
-      <div class="grow"><div class="stat-num"><bdi class="num">${fmt(sec)}<small>/${fmt(ex.seconds)}</small></bdi></div><div class="muted">שניות</div></div>
+      <div class="grow"><div class="stat-num">${frac(fmt(sec), fmt(ex.seconds))}</div><div class="muted">שניות</div></div>
       <button type="button" class="btn primary press" data-action="timer" data-ex="${ex.id}">${icon('play')}<span>טיימר</span></button>
     </div>
     <div class="inline-form">

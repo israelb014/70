@@ -17,7 +17,7 @@ export function celebrateLevel(level) {
           <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="var(--track)" stroke-width="${stroke}"/>
           ${arcFill({ cx: size / 2, r, stroke, frac: 1, from: 0, color: 'var(--accent)', cls: 'celebrate-fill', delay: 150, dur: 1000 })}
         </svg>
-        <div class="celebrate-num"><bdi class="num">${level}</bdi></div>
+        <div class="celebrate-num"><bdi class="num" dir="ltr">${level}</bdi></div>
       </div>
       <h1>עלית לרמה ${level}</h1>
       <p class="muted">כל אימון, צעד ועלייה נספרים. ממשיכים.</p>

@@ -84,5 +84,5 @@ export function openTimePicker({ value = '00:00', step = 1, title = 'בחירת 
 /** Large tappable time value that opens the picker (rendered by views). */
 export function timeField({ value, action, attrs = '', label }) {
   return `<button type="button" class="time-field press" data-action="${action}" ${attrs} aria-label="${esc(label)}: ${esc(value)}">
-    <span class="time-field-lbl">${esc(label)}</span><bdi class="time-field-val num">${esc(value)}</bdi></button>`;
+    <span class="time-field-lbl">${esc(label)}</span><bdi class="time-field-val num" dir="ltr">${esc(value)}</bdi></button>`;
 }

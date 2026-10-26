@@ -13,7 +13,7 @@ import {
 
 const minutesText = (m) => plural(m, 'דקה אחת', 'דקות');
 /** Same text with the number isolated LTR. */
-const minutesHTML = (m) => esc(minutesText(m)).replace(/\d+/, (d) => `<bdi class="num">${d}</bdi>`);
+const minutesHTML = (m) => esc(minutesText(m)).replace(/\d+/, (d) => `<bdi class="num" dir="ltr">${d}</bdi>`);
 
 /* ---------- "היום" card ---------- */
 
@@ -50,7 +50,7 @@ export async function setupSheet() {
         <span class="tech-check">${icon('check')}</span></label>`).join('')}</div>
       <div class="field"><span>משך</span>
         <div class="dur-chips" role="radiogroup" aria-label="משך">${DURATIONS.map((d) => `<label>
-          <input type="radio" name="dur" value="${d}" ${d === last.minutes ? 'checked' : ''}><span><bdi class="num">${d}</bdi> דק׳</span></label>`).join('')}</div>
+          <input type="radio" name="dur" value="${d}" ${d === last.minutes ? 'checked' : ''}><span><bdi class="num" dir="ltr">${d}</bdi> דק׳</span></label>`).join('')}</div>
       </div>`,
     actions: [{
       label: 'התחלה', kind: 'breath-btn',
@@ -110,14 +110,14 @@ export function runSession(ctx, { technique, minutes }) {
   el.className = `breathe tech-${tech.id}${still ? ' still' : ''}`;
   el.setAttribute('role', 'dialog');
   el.setAttribute('aria-label', `סשן נשימה · ${tech.name}`);
-  el.innerHTML = `<div class="br-top"><span class="muted small">${esc(tech.name)}</span><bdi class="num br-left" data-br-left>${clock(total)}</bdi></div>
+  el.innerHTML = `<div class="br-top"><span class="muted small">${esc(tech.name)}</span><bdi class="num br-left" dir="ltr" data-br-left>${clock(total)}</bdi></div>
     <div class="br-stage">
       <svg class="br-ring" viewBox="0 0 280 280" aria-hidden="true">
         <circle cx="140" cy="140" r="136" fill="none" stroke="var(--track)" stroke-width="3"/>
         <path class="br-progress" data-br-progress d="" fill="none" stroke="var(--breath)" stroke-width="3" stroke-linecap="round"/>
       </svg>
       <div class="br-circle" data-br-circle></div>
-      <div class="br-text" aria-live="polite"><div class="br-phase" data-br-phase>מתכוננים…</div><bdi class="br-sec num" data-br-sec>${PREP_SECONDS}</bdi></div>
+      <div class="br-text" aria-live="polite"><div class="br-phase" data-br-phase>מתכוננים…</div><bdi class="br-sec num" dir="ltr" data-br-sec>${PREP_SECONDS}</bdi></div>
     </div>
     <p class="br-paused" data-br-paused hidden>הפסקה<span class="muted small">הקשה להמשך</span></p>
     <button type="button" class="br-end press" data-br="end">סיום</button>`;

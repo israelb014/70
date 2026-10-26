@@ -1,6 +1,7 @@
 // Derived values: exercise completion, streak and personal records.
 import { getState, getDay, exerciseById, activeExercises } from './storage.js';
 import { todayKey, addDays } from './dates.js';
+import { drinksMl } from './fluids.js';
 
 /** Fraction (0..1) of an exercise's target achieved for a day entry. */
 export function exerciseProgress(ex, entry) {
@@ -175,6 +176,12 @@ export function sortedFood(day) {
     .sort((a, b) => (a.f.time ? 1 : 0) - (b.f.time ? 1 : 0) || (a.f.time || '').localeCompare(b.f.time || '') || a.i - b.i);
 }
 
+/** Water added on the water card only. */
 export function waterMl(day) {
   return (day?.water || []).reduce((s, w) => s + (Number(w.ml) || 0), 0);
 }
+
+export { drinksMl };
+
+/** Total fluids: water card + drinks logged in "אוכל". Everything that reads "water" uses this. */
+export const fluidsMl = (day) => waterMl(day) + drinksMl(day);

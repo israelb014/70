@@ -36,7 +36,7 @@ export function render(root, ctx) {
     <section class="card">
       <div class="card-head">${icon('download', 'head-ic')}<h2>גיבוי</h2></div>
       <p class="muted small">הנתונים נשמרים רק במכשיר הזה. מומלץ לייצא גיבוי מדי פעם.</p>
-      <p class="backup-last" data-backup-last>${lastBackupDate() ? `גיבוי אחרון: <bdi class="num">${lastBackupDate()}</bdi>` : 'עוד לא בוצע גיבוי'}</p>
+      <p class="backup-last" data-backup-last>${lastBackupDate() ? `גיבוי אחרון: <bdi class="num" dir="ltr">${lastBackupDate()}</bdi>` : 'עוד לא בוצע גיבוי'}</p>
       <div class="btn-col">
         <button type="button" class="btn secondary block press" data-action="export">${icon('download')}<span>ייצוא גיבוי</span></button>
         ${canShareBackup() ? `<button type="button" class="btn secondary block press" data-action="share-backup">${icon('share')}<span>שיתוף הקובץ</span></button>` : ''}
@@ -50,7 +50,7 @@ export function render(root, ctx) {
       <div class="card-head">${icon('alert', 'head-ic')}<h2>אזור מסוכן</h2></div>
       <button type="button" class="btn danger block press" data-action="wipe">${icon('trash')}<span>מחיקת כל הנתונים</span></button>
     </section>
-    <p class="version">70 · גרסה <bdi class="num">${APP_VERSION}</bdi><br>
+    <p class="version">70 · גרסה <bdi class="num" dir="ltr">${APP_VERSION}</bdi><br>
       <span data-db-about>מאגר המזון: מזונות נפוצים בישראל (תוויות מוצרים, USDA, צמרת) · ברקודים: Open Food Facts</span></p>`;
   fillDbAbout(root);
 
@@ -83,7 +83,7 @@ function productsCard() {
     .map(
       (p) => `<li class="list-row">
         <div class="grow"><strong>${esc(p.name)}</strong>
-          <div class="muted small">${num(p.kcal100)} קק״ל · ${num(p.protein100)} ג׳ חלבון ל-100 ג׳${p.barcode ? ` · <bdi class="num">${esc(p.barcode)}</bdi>` : ''}</div></div>
+          <div class="muted small">${num(p.kcal100)} קק״ל · ${num(p.protein100)} ג׳ חלבון ל-100 ג׳${p.barcode ? ` · <bdi class="num" dir="ltr">${esc(p.barcode)}</bdi>` : ''}</div></div>
         <button type="button" class="icon-btn sm press" data-action="prod-edit" data-id="${p.id}" aria-label="עריכה">${icon('edit')}</button>
         <button type="button" class="icon-btn sm press danger-ic" data-action="prod-del" data-id="${p.id}" aria-label="מחיקה">${icon('trash')}</button>
       </li>`

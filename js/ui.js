@@ -103,9 +103,14 @@ export function fmt(n, digits = 1) {
   return Number(n).toLocaleString('he-IL', { maximumFractionDigits: digits });
 }
 
-/** Number wrapped in an LTR isolate so it renders correctly inside RTL text. */
+/** Number wrapped in an LTR isolate so it renders correctly inside RTL text (dir="ltr" holds even without CSS). */
 export function num(n, digits) {
-  return `<bdi class="num">${typeof n === 'string' ? esc(n) : fmt(n, digits)}</bdi>`;
+  return `<bdi class="num" dir="ltr">${typeof n === 'string' ? esc(n) : fmt(n, digits)}</bdi>`;
+}
+
+/** "10/36" as ONE LTR isolate (the "/36" smaller), so RTL never reverses the two numbers. */
+export function frac(a, b) {
+  return `<bdi class="num" dir="ltr">${esc(String(a))}<small>/${esc(String(b))}</small></bdi>`;
 }
 
 /** Parse a user-entered number; returns null for empty/invalid. */

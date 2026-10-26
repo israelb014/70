@@ -4,7 +4,7 @@
 import { getState, getDay, activeExercises, exerciseById } from './storage.js';
 import { addDays, lastNDays, todayKey, weekdayName, parseKey } from './dates.js';
 import { breathMinutes, sleepAfterBreathing } from './breathing.js';
-import { foodTotals, dayCompletion, exercisesForDay, computeRecords, waterMl, floorsOf, floorsTarget } from './stats.js';
+import { foodTotals, dayCompletion, exercisesForDay, computeRecords, fluidsMl, floorsOf, floorsTarget } from './stats.js';
 import { sleepMinutes, fmtDuration, walkHistory, BADGES, durText, totalSleepMinutes, hasSleep, napsMinutes } from './progress.js';
 import { int, trim, plural } from './hebrew.js';
 
@@ -164,7 +164,7 @@ export function dayInsights(k) {
   add('צעדים', st.stepsTarget, (d.steps || 0) >= st.stepsTarget);
   add('מדרגות', floorsTarget(st), floorsOf(d) >= floorsTarget(st));
   add('חלבון', st.proteinTarget, foodTotals(k).protein >= st.proteinTarget);
-  add('מים', st.waterTarget, waterMl(d) >= st.waterTarget);
+  add('מים', st.waterTarget, fluidsMl(d) >= st.waterTarget); // water card + drinks
   const c = dayCompletion(k);
   add('תרגילים', c.total > 0, c.total > 0 && c.done === c.total);
   if (targets.length === all.length && targets.length >= 3) {
@@ -193,7 +193,7 @@ export function weekInsights(today = todayKey()) {
     { id: 'kcal', cat: 'food', has: (d) => d.food.length > 0, val: (k) => foodTotals(k).kcal, agg: 'avg', name: 'ממוצע הקלוריות היומי', good: null },
     { id: 'completion', cat: 'strength', has: (d, k) => !d.rest && dayCompletion(k).total > 0 && Object.keys(d.exercises || {}).length > 0, val: (k) => dayCompletion(k).fraction, agg: 'avg', name: 'אחוז השלמת האימונים', good: true },
     { id: 'sleep', cat: 'sleep', has: (d) => hasSleep(d), val: (k, d) => totalSleepMinutes(d), agg: 'avg', name: 'ממוצע השינה', good: true },
-    { id: 'water', cat: 'food', has: (d) => waterMl(d) > 0, val: (k, d) => waterMl(d), agg: 'avg', name: 'ממוצע המים היומי', good: true },
+    { id: 'water', cat: 'food', has: (d) => fluidsMl(d) > 0, val: (k, d) => fluidsMl(d), agg: 'avg', name: 'ממוצע המים היומי', good: true },
     { id: 'breath', cat: 'breath', has: (d) => breathMinutes(d) > 0, val: (k, d) => breathMinutes(d), agg: 'sum', name: 'דקות הנשימה', good: true },
   ];
   for (const m of metrics) {
@@ -330,7 +330,7 @@ export function weekInsights(today = todayKey()) {
     { id: 'steps', label: 'הצעדים', t: st.stepsTarget, met: (d) => (d.steps || 0) >= st.stepsTarget, used: (d) => d.steps > 0 },
     { id: 'climbs', label: 'המדרגות', t: floorsTarget(st), met: (d) => floorsOf(d) >= floorsTarget(st), used: (d) => d.climbs.length > 0 },
     { id: 'protein', label: 'החלבון', t: st.proteinTarget, met: (d, k) => foodTotals(k).protein >= st.proteinTarget, used: (d) => d.food.length > 0 },
-    { id: 'water', label: 'המים', t: st.waterTarget, met: (d) => waterMl(d) >= st.waterTarget, used: (d) => waterMl(d) > 0 },
+    { id: 'water', label: 'המים', t: st.waterTarget, met: (d) => fluidsMl(d) >= st.waterTarget, used: (d) => fluidsMl(d) > 0 },
   ];
   for (const c of checks) {
     if (!c.t || !trackedRecently((d) => c.used(d))) continue;

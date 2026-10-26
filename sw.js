@@ -18,6 +18,7 @@ const APP_FILES = [
   './js/dates.js',
   './js/storage.js',
   './js/stats.js',
+  './js/fluids.js',
   './js/ui.js',
   './js/charts.js',
   './js/export.js',

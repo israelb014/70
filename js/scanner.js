@@ -137,7 +137,7 @@ export function openScanner() {
           if (hit) {
             vibrate(HAPTIC.item);
             el.classList.add('found');
-            msg.innerHTML = `נמצא: <bdi class="num">${esc(hit.rawValue)}</bdi>`;
+            msg.innerHTML = `נמצא: <bdi class="num" dir="ltr">${esc(hit.rawValue)}</bdi>`;
             setTimeout(() => close(hit.rawValue), 250);
             return;
           }

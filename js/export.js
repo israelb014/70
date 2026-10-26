@@ -1,7 +1,7 @@
 // Daily / weekly text summaries (clipboard) and JSON backup export / import.
 import { getState, getDay, validateBackup, replaceState, updateMeta } from './storage.js';
 import { lastNDays, todayKey, shortDate, weekdayName, fullDate } from './dates.js';
-import { computeRecords, exercisesForDay, foodTotals, floorsOf, floorsTarget, dayCompletion, completionPct, sortedFood, waterMl } from './stats.js';
+import { computeRecords, exercisesForDay, foodTotals, floorsOf, floorsTarget, dayCompletion, completionPct, sortedFood, waterMl, drinksMl } from './stats.js';
 import { fmt } from './ui.js';
 import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES, dayXP, durText, napMinutes, napsMinutes, totalSleepMinutes, sortedNaps } from './progress.js';
 import { int, dec1, dec2, trim, iso, plural, unitAmount } from './hebrew.js';
@@ -63,6 +63,9 @@ function weekSleepLine(day) {
   return `שינה: ${iso(fmtDuration(totalSleepMinutes(day)))} שעות (${parts.join(' + ')})`;
 }
 
+/** "מים 0.75 · משקאות 0.50" (liters). */
+const splitText = (wMl, dMl) => `מים ${dec2(wMl / 1000)} · משקאות ${dec2(dMl / 1000)}`;
+
 const minutesText = (m) => plural(m, 'דקה אחת', 'דקות');
 
 /** "נשימה: 10 דקות (נשימה רגועה 5, נשימת קופסה 5)" / "נשימה: 5 דקות (נשימה רגועה)"; '' when none. */
@@ -120,8 +123,9 @@ export function dailySummary(k) {
   const sl = sleepLines(day);
   if (sl.length) sections.push(sl);
 
-  const ml = waterMl(day);
-  if (ml) sections.push([`מים: ${dec2(ml / 1000)} ל׳ / ${trim((st.waterTarget || 2500) / 1000)} ל׳ (${cupsText(ml)})`]);
+  // Fluids = water card + drinks from "אוכל"; with drinks the parentheses show the breakdown.
+  const wMl = waterMl(day), dMl = drinksMl(day), ml = wMl + dMl;
+  if (ml) sections.push([`מים: ${dec2(ml / 1000)} ל׳ / ${trim((st.waterTarget || 2500) / 1000)} ל׳ (${dMl ? splitText(wMl, dMl) : cupsText(ml)})`]);
   const bl = breathLine(day);
   if (bl) sections.push([bl]);
 
@@ -179,8 +183,9 @@ export function weeklySummary() {
     }
     const sw = weekSleepLine(day);
     if (sw) body.push(sw);
-    const ml = waterMl(day);
-    if (ml) body.push(`מים: ${dec2(ml / 1000)} ל׳ (${cupsText(ml)})`);
+    const wMl = waterMl(day), dMl = drinksMl(day);
+    if (dMl) body.push(`נוזלים: ${dec2((wMl + dMl) / 1000)} ל׳ (${splitText(wMl, dMl)})`);
+    else if (wMl) body.push(`מים: ${dec2(wMl / 1000)} ל׳ (${cupsText(wMl)})`);
     const bm = breathMinutes(day);
     if (bm) body.push(`נשימה: ${minutesText(bm)}`);
     const ft = foodTotals(k);

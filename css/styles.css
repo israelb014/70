@@ -31,6 +31,7 @@
   --water: #38bdf8;
   --sleep: #a78bfa;
   --sleep-light: #d8ccff;
+  --water-light: #a5e3fb;
   --breath: #34d399;
   --breath-ink: #03140c; /* text on the breathing color */
   --success: #4ade80;
@@ -1088,6 +1089,13 @@ input[type='time']::-webkit-calendar-picker-indicator { opacity: 0.6; }
 .br-done-mark span { position: absolute; inset: 0; border-radius: var(--r-pill); background: var(--breath-t); box-shadow: 0 0 0 0 var(--breath-glow); animation: br-glow 1.6s var(--ease-out) both; }
 .br-done-mark .ic { position: relative; width: 52px; height: 52px; animation: pop 600ms 200ms var(--ease-out) both; }
 @keyframes br-glow { from { transform: scale(0.6); opacity: 0; box-shadow: 0 0 0 0 var(--breath-glow); } to { transform: none; opacity: 1; box-shadow: 0 0 0 28px transparent; } }
+
+/* ---------- Fluids (drinks count toward water) ---------- */
+.water-split { font: var(--t-body-strong); color: var(--text); text-align: center; padding: var(--s-2) var(--s-3); border-radius: var(--r-chip); background: var(--water-t); white-space: nowrap; }
+.fluid-ic { display: inline-flex; vertical-align: -2px; margin-inline-end: var(--s-1); color: var(--water); }
+.fluid-ic .ic { width: 15px; height: 15px; }
+.food-edit { cursor: pointer; border-radius: var(--r-chip); }
+.food-edit:focus-visible { box-shadow: 0 0 0 3px var(--accent-t); outline: none; }
 
 /* Narrow phones (360px) */
 @media (max-width: 380px) {

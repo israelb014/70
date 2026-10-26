@@ -3,6 +3,7 @@
 import { getState, updateDay, upsertPreset, upsertCustomFood, rememberFood } from './storage.js';
 import { icon, esc, num, parseNum, toast, vibrate, openSheet, invalid, HAPTIC } from './ui.js';
 import { fromCustom, lookupBarcode } from './foods.js';
+import { drinkByRules } from './fluids.js';
 import { nowTime } from './dates.js';
 import { openScanner } from './scanner.js';
 
@@ -27,10 +28,15 @@ export async function openAmountSheet(dayKey, food, { editableName = false, sour
   let unitIdx = Math.max(0, mem ? units.findIndex((u) => u.l === mem.unit) : 0);
   const startAmount = mem && units[unitIdx].l === mem.unit ? mem.amount : unitIdx === 0 ? 100 : 1;
 
+  // "נחשב לנוזלים": the food's remembered choice, otherwise the drink rules (re-evaluated on unit change until touched).
+  let fluidTouched = false;
+  function fluidPreset() {
+    return typeof mem?.fluid === 'boolean' ? mem.fluid : drinkByRules(food.name, units[unitIdx].l);
+  }
   const unitChips = units
     .map(
       (u, i) => `<label class="unit-chip"><input type="radio" name="unit" value="${i}" ${i === unitIdx ? 'checked' : ''}>
-        <span>${esc(u.l)}${i ? ` <bdi class="num">${num(u.g)}</bdi> ג׳` : ''}</span></label>`
+        <span>${esc(u.l)}${i ? ` <bdi class="num" dir="ltr">${num(u.g)}</bdi> ג׳` : ''}</span></label>`
     )
     .join('');
 
@@ -49,6 +55,7 @@ export async function openAmountSheet(dayKey, food, { editableName = false, sour
       <div><span class="calc-num protein-txt" data-calc="protein">0</span><span class="muted small">ג׳ חלבון</span></div>
       <div><span class="calc-num sm" data-calc="grams">0</span><span class="muted small">גרם</span></div>
     </div>
+    <label class="check fluid-check"><input type="checkbox" name="fluid" ${fluidPreset() ? 'checked' : ''}><span class="check-box">${icon('check')}</span><span>נחשב לנוזלים</span></label>
     <label class="check"><input type="checkbox" name="preset"><span class="check-box">${icon('check')}</span><span>שמור כארוחה קבועה</span></label>`;
 
   const gramsOf = (root) => {
@@ -70,12 +77,14 @@ export async function openAmountSheet(dayKey, food, { editableName = false, sour
       update(root);
       const amountIn = root.querySelector('[name=amount]');
       amountIn.addEventListener('input', () => update(root));
+      root.querySelector('[name=fluid]').addEventListener('change', () => { fluidTouched = true; });
       root.querySelectorAll('[name=unit]').forEach((r) =>
         r.addEventListener('change', () => {
           const grams = gramsOf(root);
           unitIdx = Number(r.value);
           // Switching unit: grams keep the current weight, other units start at 1.
           amountIn.value = unitIdx === 0 ? String(Math.round(grams) || 100) : '1';
+          if (!fluidTouched) root.querySelector('[name=fluid]').checked = fluidPreset();
           update(root);
         })
       );
@@ -96,7 +105,7 @@ export async function openAmountSheet(dayKey, food, { editableName = false, sour
           const nameIn = root.querySelector('[name=name]');
           const name = nameIn ? nameIn.value.trim() : food.name;
           if (!name) return invalid(nameIn, 'יש להזין שם');
-          return { amount, name, grams: gramsOf(root), preset: root.querySelector('[name=preset]').checked };
+          return { amount, name, grams: gramsOf(root), preset: root.querySelector('[name=preset]').checked, fluid: root.querySelector('[name=fluid]').checked };
         },
       },
     ],
@@ -105,10 +114,13 @@ export async function openAmountSheet(dayKey, food, { editableName = false, sour
 
   const grams = Math.round(res.grams * 10) / 10;
   const { kcal, protein } = calcFood(food, grams);
-  updateDay(dayKey, (d) =>
-    d.food.push({ name: res.name, grams, kcal, protein, source, time: nowTime(), amount: res.amount, unit: units[unitIdx].l })
-  );
-  rememberFood(food.key, res.amount, units[unitIdx].l);
+  const unit = units[unitIdx].l;
+  const rule = drinkByRules(res.name, unit);
+  const entry = { name: res.name, grams, kcal, protein, source, time: nowTime(), amount: res.amount, unit, key: food.key };
+  if (res.fluid !== rule) entry.fluid = res.fluid; // manual choice overrides the rules
+  updateDay(dayKey, (d) => d.food.push(entry));
+  // Remember a changed choice for this food (cleared when it matches the rules again).
+  rememberFood(food.key, res.amount, unit, fluidTouched ? (res.fluid !== rule ? res.fluid : null) : undefined);
   if (food.id && res.name !== food.name) upsertCustomFood({ id: food.id, name: res.name });
   if (res.preset) upsertPreset({ name: res.name, kcal, protein });
   vibrate(HAPTIC.item);

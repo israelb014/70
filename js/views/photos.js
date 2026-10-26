@@ -92,7 +92,7 @@ function sessionCard(s) {
 
 function backupLine() {
   const d = lastPhotoBackupDate();
-  return d ? `גיבוי תמונות אחרון: <bdi class="num">${d}</bdi>` : 'עוד לא בוצע גיבוי תמונות';
+  return d ? `גיבוי תמונות אחרון: <bdi class="num" dir="ltr">${d}</bdi>` : 'עוד לא בוצע גיבוי תמונות';
 }
 
 function backupCard() {
@@ -450,7 +450,7 @@ export function diffText(a, b) {
 }
 
 /** Same text, numbers isolated LTR so "-9.4" keeps its sign on the left inside RTL. */
-const diffHTML = (a, b) => esc(diffText(a, b)).replace(/\u200E?[-+]?[\d.,]+/g, (m) => `<bdi class="num">${m}</bdi>`);
+const diffHTML = (a, b) => esc(diffText(a, b)).replace(/\u200E?[-+]?[\d.,]+/g, (m) => `<bdi class="num" dir="ltr">${m}</bdi>`);
 
 const sideLabel = (date) => {
   const w = sessionWeight(date);

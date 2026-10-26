@@ -1,5 +1,6 @@
 // "אוכל" tab: protein ring + calories, meal presets grid, manual entry, day list.
-import { getState, getDay, updateDay, upsertPreset, deletePreset } from '../storage.js';
+import { getState, getDay, updateDay, upsertPreset, deletePreset, setFoodFluid } from '../storage.js';
+import { isDrink, drinkByRules } from '../fluids.js';
 import { ring } from '../charts.js';
 import {
   icon, esc, num, parseNum, toast, vibrate, HAPTIC, emptyState, skeleton, openSheet, confirmDialog, invalid, dateNav, handleDateNav, bindSwipe,
@@ -40,8 +41,9 @@ export function render(root, ctx) {
       ({ f, i }) => `<li class="swipe-item"><span class="swipe-bg" aria-hidden="true">${icon('trash')}</span>
         <div class="list-row swipe" data-swipe="${i}">
         <button type="button" class="time-chip press ${f.time ? '' : 'empty'}" data-action="food-time" data-i="${i}" aria-label="עריכת שעה">
-          ${f.time ? `<bdi class="num">${esc(f.time)}</bdi>` : icon('timer')}</button>
-        <div class="grow"><strong>${esc(f.name || 'ללא שם')}</strong>
+          ${f.time ? `<bdi class="num" dir="ltr">${esc(f.time)}</bdi>` : icon('timer')}</button>
+        <div class="grow food-edit" data-action="food-edit" data-i="${i}" role="button" tabindex="0" aria-label="עריכת ${esc(f.name || 'ללא שם')}">
+          <strong>${isDrink(f) ? `<span class="fluid-ic" title="נחשב לנוזלים">${icon('drop')}</span>` : ''}${esc(f.name || 'ללא שם')}</strong>
           <div class="muted small">${amountText(f)}${num(f.kcal || 0)} קק״ל · <span class="protein-txt">${num(f.protein || 0)} ג׳ חלבון</span></div></div>
         <button type="button" class="icon-btn sm press danger-ic" data-action="food-del" data-i="${i}" aria-label="מחיקה">${icon('trash')}</button>
       </div></li>`
@@ -94,6 +96,9 @@ export function render(root, ctx) {
     <button type="button" class="btn secondary block press" data-action="copy-daily">${icon('copy')}<span>העתק סיכום יומי</span></button>`;
 
   root.onclick = (e) => onClick(e, ctx);
+  root.onkeydown = (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-action=food-edit]')) { e.preventDefault(); e.target.click(); }
+  };
   root.onchange = null;
   root.oninput = (e) => {
     if (e.target.matches('[data-search]')) updateResults(root, e.target.value);
@@ -237,6 +242,31 @@ async function onClick(e, ctx) {
     case 'food-del':
       removeFood(ctx, Number(b.dataset.i));
       return;
+    case 'food-edit': {
+      // Entry edit: "נחשב לנוזלים" (the manual choice overrides the rules and is remembered for the food).
+      const i = Number(b.dataset.i);
+      const item = getDay(k).food[i];
+      if (!item) return;
+      const res = await openSheet({
+        title: item.name || 'ללא שם',
+        body: `<label class="check fluid-check"><input type="checkbox" name="fluid" ${isDrink(item) ? 'checked' : ''}>
+            <span class="check-box">${icon('check')}</span><span>נחשב לנוזלים</span></label>
+          <p class="hint">${item.grams ? `${num(Math.round(item.grams))} מ״ל ייספרו בכרטיס המים` : 'אין כמות בגרמים, ולכן לא ייספר בנוזלים'}</p>`,
+        actions: [
+          { label: 'ביטול', value: null, kind: 'ghost' },
+          { label: 'שמירה', kind: 'primary', onClick: (w) => ({ fluid: w.querySelector('[name=fluid]').checked }) },
+        ],
+      });
+      if (!res) return;
+      const rule = drinkByRules(item.name, item.unit);
+      updateDay(k, (d) => {
+        if (res.fluid !== rule) d.food[i].fluid = res.fluid;
+        else delete d.food[i].fluid;
+      });
+      setFoodFluid(item.key || (item.source === 'db' ? `db:${item.name}` : null), res.fluid !== rule ? res.fluid : null);
+      toast('נשמר');
+      return ctx.rerender();
+    }
     case 'food-time': {
       const i = Number(b.dataset.i);
       const item = getDay(k).food[i];

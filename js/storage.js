@@ -290,9 +290,19 @@ export function customFoodByBarcode(code) {
 }
 
 /** Remember the last amount/unit for a food and count how often it was eaten. */
-export function rememberFood(key, amount, unit) {
+export function rememberFood(key, amount, unit, fluid) {
   const prev = state.foodMemory[key];
   state.foodMemory[key] = { amount, unit, count: (prev?.count || 0) + 1 };
+  // "נחשב לנוזלים" override for this food (true/false); undefined keeps the previous choice, null clears it.
+  const f = fluid === undefined ? prev?.fluid : fluid;
+  if (typeof f === 'boolean') state.foodMemory[key].fluid = f;
+  save();
+}
+
+export function setFoodFluid(key, fluid) {
+  if (!key) return;
+  const m = (state.foodMemory[key] ||= { count: 0 });
+  if (typeof fluid === 'boolean') m.fluid = fluid; else delete m.fluid;
   save();
 }
 

@@ -21,7 +21,7 @@ export function runTimer(seconds, name) {
           <path class="timer-fill" d="${arcPath(size / 2, size / 2, r, 1, stroke)}" fill="none" stroke="var(--accent)"
             stroke-width="${stroke}" stroke-linecap="round"/>
         </svg>
-        <div class="timer-center"><bdi class="timer-num num">${seconds}</bdi><span class="muted">שניות</span></div>
+        <div class="timer-center"><bdi class="timer-num num" dir="ltr">${seconds}</bdi><span class="muted">שניות</span></div>
       </div>
       <div class="timer-actions">
         <button type="button" class="btn ghost press" data-t="cancel">${icon('x')}<span>ביטול</span></button>
