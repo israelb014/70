@@ -7,7 +7,7 @@ import {
 } from '../ui.js';
 import {
   dayCompletion, currentStreak, exercisesForDay, exerciseProgress, computeRecords, recordIdsOn,
-  longestRideKm, floorsOf, floorsTarget,
+  longestRideKm, floorsOf, floorsTarget, descentFloorsOf, lastStairsEntry,
 } from '../stats.js';
 import { runTimer } from '../timer.js';
 import {
@@ -391,6 +391,7 @@ function stairsCard(day, st, badge) {
   const count = day.climbs.length;
   const floors = floorsOf(day);
   const target = floorsTarget(st);
+  const downs = (day.descents || []).length, downFloors = descentFloorsOf(day); // descents: never part of the target
   return `<section class="card role-accent">
     <div class="card-head">${icon('stairs', 'head-ic')}<h2>מדרגות</h2>${badge('climbs')}</div>
     <div class="row">
@@ -403,8 +404,9 @@ function stairsCard(day, st, badge) {
         <div class="stat-num" data-floors>${frac(fmt(floors), fmt(target))}<small> קומות</small></div>
         <div class="muted" data-climbs-count>${count === 1 ? 'עלייה אחת' : `${num(count)} עליות`}</div>
       </div>
-      <button type="button" class="icon-btn press" data-action="climb-undo" aria-label="ביטול עלייה אחרונה" ${count ? '' : 'disabled'}>${icon('undo')}</button>
+      <button type="button" class="icon-btn press" data-action="climb-undo" aria-label="ביטול הרישום האחרון במדרגות" ${count || downs ? '' : 'disabled'}>${icon('undo')}</button>
     </div>
+    ${downs ? `<p class="descents-line" data-descents>${icon('stairsDown')}<span>ירדת ${esc(plural(downFloors, 'קומה אחת', 'קומות', int))} · ${esc(plural(downs, 'ירידה אחת', 'ירידות', int))}</span></p>` : ''}
     <div class="btn-trio">
       <button type="button" class="big-add press" data-action="climb" data-type="regular">
         ${icon('plus')}<strong>עלייה רגילה</strong><span>${num(st.floorsRegular || 0)} קומות</span></button>
@@ -413,30 +415,38 @@ function stairsCard(day, st, badge) {
       <button type="button" class="big-add press" data-action="climb-custom">
         ${icon('stairs')}<strong>אחר</strong><span>1–30 קומות</span></button>
     </div>
+    <div class="descent-row" role="group" aria-label="ירידה">
+      <span class="descent-lbl">${icon('stairsDown')}ירידה</span>
+      <div class="descent-btns">
+        <button type="button" class="small-add press" data-action="descent" data-type="regular"><strong>רגילה</strong><span>${num(st.floorsRegular || 0)} קומות</span></button>
+        <button type="button" class="small-add press" data-action="descent" data-type="roof"><strong>מהגג</strong><span>${num(st.floorsRoof || 0)} קומות</span></button>
+        <button type="button" class="small-add press" data-action="descent-custom"><strong>אחר</strong><span>1–30</span></button>
+      </div>
+    </div>
   </section>`;
 }
 
-/** Floors of the most recent custom climb in history (prefill), default 3. */
-function lastCustomFloors() {
+/** Floors of the most recent custom climb (or descent) in history (prefill), default 3. */
+function lastCustomFloors(kind = 'climbs') {
   const days = getState().days;
   for (const k of Object.keys(days).sort().reverse()) {
-    const c = [...(days[k].climbs || [])].reverse().find((x) => x.type === 'custom' && Number(x.floors) > 0);
+    const c = [...(days[k][kind] || [])].reverse().find((x) => x.type === 'custom' && Number(x.floors) > 0);
     if (c) return Math.min(30, Math.max(1, Number(c.floors)));
   }
   return 3;
 }
 
-/** "אחר" climb: stepper 1–30 floors. Resolves the number, or null. */
-function customClimbSheet() {
+/** "אחר" climb / descent: stepper 1–30 floors. Resolves the number, or null. */
+function customClimbSheet(kind = 'climbs') {
   const MIN = 1, MAX = 30;
-  let n = lastCustomFloors();
+  let n = lastCustomFloors(kind);
   const sync = (w) => {
     w.querySelector('[data-floors-val]').textContent = String(n);
     w.querySelector('[data-step="-1"]').disabled = n <= MIN;
     w.querySelector('[data-step="1"]').disabled = n >= MAX;
   };
   return openSheet({
-    title: 'עלייה אחרת',
+    title: kind === 'descents' ? 'ירידה אחרת' : 'עלייה אחרת',
     body: `<div class="stepper" role="group" aria-label="מספר קומות">
         <button type="button" class="stepper-btn press" data-step="1" aria-label="קומה נוספת">${icon('plus')}</button>
         <div class="stepper-val"><output class="num" data-floors-val aria-live="polite">${n}</output><span>קומות</span></div>
@@ -688,6 +698,7 @@ async function onClick(e, ctx) {
         const type = b.dataset.type;
         entry = { type, floors: type === 'roof' ? st.floorsRoof || 0 : st.floorsRegular || 0 };
       }
+      Object.assign(entry, { time: nowTime(), at: Date.now() }); // for undo order across ascents / descents
       const before = floorsOf(getDay(k));
       updateDay(k, (d) => d.climbs.push(entry));
       const after = floorsOf(getDay(k)), target = floorsTarget(st);
@@ -697,9 +708,25 @@ async function onClick(e, ctx) {
       } else vibrate(HAPTIC.item);
       return rerender();
     }
-    case 'climb-undo':
-      updateDay(k, (d) => d.climbs.pop());
+    case 'descent':
+    case 'descent-custom': {
+      let n = null;
+      if (a === 'descent-custom') {
+        n = await customClimbSheet('descents');
+        if (!n) return;
+      }
+      const type = a === 'descent-custom' ? 'custom' : b.dataset.type;
+      const entry = { type, floors: n ?? (type === 'roof' ? st.floorsRoof || 0 : st.floorsRegular || 0), time: nowTime(), at: Date.now() };
+      updateDay(k, (d) => { (d.descents ||= []).push(entry); });
+      vibrate(HAPTIC.item);
       return rerender();
+    }
+    case 'climb-undo': {
+      // Most recent stairs entry of either kind (by time).
+      const last = lastStairsEntry(getDay(k));
+      if (last) updateDay(k, (d) => d[last.kind].splice(last.index, 1));
+      return rerender();
+    }
     case 'ride-new': {
       const ride = await rideSheet();
       if (!ride) return;

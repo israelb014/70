@@ -112,6 +112,7 @@ export function computeRecords() {
     const day = state.days[k];
     consider('steps', 'הכי הרבה צעדים ביום', 'צעדים', day.steps || 0, k);
     consider('climbs', 'הכי הרבה קומות ביום', 'קומות', floorsOf(day), k);
+    consider('descents', 'הכי הרבה קומות בירידה ביום', 'קומות', descentFloorsOf(day), k);
     const ride = Math.max(0, ...(day.rides || []).map((r) => Number(r.km) || 0));
     consider('ride', 'הרכיבה הארוכה ביותר', 'ק״מ', ride, k);
 
@@ -159,6 +160,28 @@ export function climbFloors(c, st = getState().settings || {}) {
 
 export function floorsOf(day) {
   return (day.climbs || []).reduce((s, c) => s + climbFloors(c), 0);
+}
+
+/** Descended floors of a day (regular / roof resolve from settings like ascents). Not part of any target. */
+export function descentFloorsOf(day) {
+  return (day?.descents || []).reduce((s, c) => s + climbFloors(c), 0);
+}
+
+/**
+ * Most recent stairs entry of either kind: { kind: 'climbs' | 'descents', index } or null.
+ * Ordered by time ("HH:MM", then the hidden ms stamp); old ascents without a time are older than any timed entry.
+ */
+export function lastStairsEntry(day) {
+  // "1HH:MM|ms" sorts chronologically; untimed old ascents get "0" and sort first. Ties keep the later entry.
+  const sortKey = (e) => `${e.time ? `1${e.time}` : '0'}|${String(Number(e.at) || 0).padStart(15, '0')}`;
+  let best = null;
+  for (const kind of ['climbs', 'descents']) {
+    (day?.[kind] || []).forEach((e, index) => {
+      const key = sortKey(e);
+      if (!best || key >= best.key) best = { kind, index, key };
+    });
+  }
+  return best && { kind: best.kind, index: best.index };
 }
 
 /** Daily stairs target in floors = climbsTarget × floorsRegular (e.g. 6 × 6 = 36). */

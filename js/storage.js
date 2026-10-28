@@ -19,7 +19,7 @@ export function blankState() {
 }
 
 export function blankDay() {
-  return { rest: false, steps: null, climbs: [], rides: [], exercises: {}, food: [], sleep: null, naps: [], water: [], breathing: [] };
+  return { rest: false, steps: null, climbs: [], rides: [], exercises: {}, food: [], sleep: null, naps: [], water: [], breathing: [], descents: [] };
 }
 
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
@@ -100,6 +100,10 @@ export function normalize(d) {
         breathing: Array.isArray(day.breathing)
           ? day.breathing.filter((x) => isObj(x) && Number(x.minutes) > 0)
             .map((x) => ({ technique: String(x.technique || 'calm'), minutes: Math.round(Number(x.minutes)), time: TIME_RE.test(x.time) ? x.time : null }))
+          : [],
+        descents: Array.isArray(day.descents)
+          ? day.descents.filter((x) => isObj(x) && ['regular', 'roof', 'custom'].includes(x.type))
+            .map((x) => ({ type: x.type, ...(Number(x.floors) > 0 ? { floors: Number(x.floors) } : {}), ...(TIME_RE.test(x.time) ? { time: x.time } : {}), ...(Number(x.at) > 0 ? { at: Number(x.at) } : {}) }))
           : [],
       };
     }

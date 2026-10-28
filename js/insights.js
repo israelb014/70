@@ -4,7 +4,7 @@
 import { getState, getDay, activeExercises, exerciseById } from './storage.js';
 import { addDays, lastNDays, todayKey, weekdayName, parseKey } from './dates.js';
 import { breathMinutes, sleepAfterBreathing } from './breathing.js';
-import { foodTotals, dayCompletion, exercisesForDay, computeRecords, fluidsMl, floorsOf, floorsTarget } from './stats.js';
+import { foodTotals, dayCompletion, exercisesForDay, computeRecords, fluidsMl, floorsOf, floorsTarget, descentFloorsOf } from './stats.js';
 import { sleepMinutes, fmtDuration, walkHistory, BADGES, durText, totalSleepMinutes, hasSleep, napsMinutes } from './progress.js';
 import { int, trim, plural } from './hebrew.js';
 
@@ -35,6 +35,7 @@ function recordText(id, value, name) {
   if (id === 'ride') return `שיא חדש ברכיבה: ${trim(value, 1)} ק״מ`;
   if (id === 'steps') return `שיא חדש בצעדים: ${int(value)} צעדים ביום`;
   if (id === 'climbs') return `שיא חדש במדרגות: ${plural(value, 'קומה אחת', 'קומות')} ביום`;
+  if (id === 'descents') return `שיא חדש בירידה במדרגות: ${plural(value, 'קומה אחת', 'קומות')} ביום`;
   return `שיא אישי חדש: ${trim(value, 1)}`;
 }
 
@@ -188,6 +189,7 @@ export function weekInsights(today = todayKey()) {
   const metrics = [
     { id: 'steps', cat: 'activity', has: (d) => d.steps > 0, val: (k, d) => d.steps, agg: 'avg', name: 'ממוצע הצעדים היומי', good: true },
     { id: 'climbs', cat: 'activity', has: (d) => floorsOf(d) > 0, val: (k, d) => floorsOf(d), agg: 'sum', name: 'מספר הקומות במדרגות', good: true },
+    { id: 'descents', cat: 'activity', has: (d) => descentFloorsOf(d) > 0, val: (k, d) => descentFloorsOf(d), agg: 'sum', name: 'מספר הקומות בירידה', good: true },
     { id: 'ride', cat: 'activity', has: (d) => d.rides.length > 0, val: (k, d) => d.rides.reduce((a, r) => a + (Number(r.km) || 0), 0), agg: 'sum', name: 'מרחק הרכיבה', good: true },
     { id: 'protein', cat: 'food', has: (d) => d.food.length > 0, val: (k) => foodTotals(k).protein, agg: 'avg', name: 'ממוצע החלבון היומי', good: true },
     { id: 'kcal', cat: 'food', has: (d) => d.food.length > 0, val: (k) => foodTotals(k).kcal, agg: 'avg', name: 'ממוצע הקלוריות היומי', good: null },
@@ -214,6 +216,8 @@ export function weekInsights(today = todayKey()) {
       ? `השלמת האימונים ${up ? 'עלתה' : 'ירדה'} מ-${Math.round(vb * 100)}% ל-${Math.round(va * 100)}% לעומת השבוע הקודם`
       : m.id === 'breath'
         ? `השבוע נשמת ${int(va)} דקות, ${Math.abs(pct)}% ${up ? 'יותר' : 'פחות'} משבוע שעבר`
+      : m.id === 'descents'
+        ? `השבוע ירדת ${int(va)} קומות במדרגות, ${Math.abs(pct)}% ${up ? 'יותר' : 'פחות'} משבוע שעבר`
       : m.id === 'climbs'
         ? `השבוע עלית ${int(va)} קומות, ${Math.abs(pct)}% ${up ? 'יותר' : 'פחות'} משבוע שעבר`
       : m.id === 'sleep'

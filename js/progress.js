@@ -3,7 +3,7 @@
 // a past day recalculates XP, levels and badge dates automatically.
 import { getState, getDay, exerciseById } from './storage.js';
 import { todayKey, addDays, lastNDays } from './dates.js';
-import { exerciseProgress, dayCompletion, isDayActive, foodTotals, floorsOf, floorsTarget } from './stats.js';
+import { exerciseProgress, dayCompletion, isDayActive, foodTotals, floorsOf, floorsTarget, descentFloorsOf } from './stats.js';
 import { plural } from './hebrew.js';
 import { breathMinutes, breathGoal } from './breathing.js';
 
@@ -122,6 +122,7 @@ export function dayXP(k) {
   }
   xp += Math.floor((day.steps || 0) / 1000);
   xp += Math.floor(floorsOf(day) / 2); // 1 XP per 2 floors per day (regular 6 = 3, roof 10 = 5)
+  xp += Math.floor(descentFloorsOf(day) / 6); // descents: 1 XP per 6 floors per day
   for (const r of day.rides || []) xp += 2 * Math.floor(Number(r.km) || 0);
   if (st.proteinTarget && foodTotals(k).protein >= st.proteinTarget) xp += 10;
   const comp = dayCompletion(k);

@@ -1,7 +1,7 @@
 // Daily / weekly text summaries (clipboard) and JSON backup export / import.
 import { getState, getDay, validateBackup, replaceState, updateMeta } from './storage.js';
 import { lastNDays, todayKey, shortDate, weekdayName, fullDate } from './dates.js';
-import { computeRecords, exercisesForDay, foodTotals, floorsOf, floorsTarget, dayCompletion, completionPct, sortedFood, waterMl, drinksMl } from './stats.js';
+import { computeRecords, exercisesForDay, foodTotals, floorsOf, floorsTarget, descentFloorsOf, dayCompletion, completionPct, sortedFood, waterMl, drinksMl } from './stats.js';
 import { fmt } from './ui.js';
 import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES, dayXP, durText, napMinutes, napsMinutes, totalSleepMinutes, sortedNaps } from './progress.js';
 import { int, dec1, dec2, trim, iso, plural, unitAmount } from './hebrew.js';
@@ -35,6 +35,9 @@ function exerciseLine(ex, entry) {
   if (ex.type === 'timed') return entry.seconds ? `${plural(entry.seconds, 'שנייה אחת', 'שניות')}${kg(entry.weight)}` : '';
   return entry.reps ? `סט אחד (${plural(entry.reps, 'חזרה אחת', 'חזרות')})${kg(entry.weight)}` : '';
 }
+
+/** "3 ירידות · 18 קומות" */
+const descentsText = (day) => `${plural(day.descents.length, 'ירידה אחת', 'ירידות')} · ${plural(descentFloorsOf(day), 'קומה אחת', 'קומות')}`;
 
 /** "4 עליות · 27 קומות / 36" — entries (any type), floors, daily floors target. */
 const climbsText = (day) => {
@@ -110,6 +113,7 @@ export function dailySummary(k) {
   const act = [];
   if (day.steps) act.push(`• צעדים: ${st.stepsTarget ? iso(`${int(day.steps)} / ${int(st.stepsTarget)}`) : int(day.steps)}`);
   if (day.climbs.length) act.push(`• מדרגות: ${climbsText(day)}`);
+  if (day.descents?.length) act.push(`• ירידה במדרגות: ${descentsText(day)}`);
   if (day.rides.length) {
     const km = day.rides.reduce((a, r) => a + (Number(r.km) || 0), 0);
     const min = day.rides.reduce((a, r) => a + (Number(r.minutes) || 0), 0);
@@ -174,6 +178,7 @@ export function weeklySummary() {
     const body = [];
     if (day.steps) body.push(`צעדים: ${fmt(day.steps)}`);
     if (day.climbs.length) body.push(`מדרגות: ${climbsText(day)}`);
+    if (day.descents?.length) body.push(`ירידה במדרגות: ${descentsText(day)}`);
     for (const r of day.rides) {
       body.push(`רכיבה: ${fmt(r.km)} ק״מ${r.minutes ? ` · ${fmt(r.minutes)} דק׳` : ''}${r.note ? ` (${r.note})` : ''}`);
     }
