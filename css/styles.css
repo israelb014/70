@@ -631,6 +631,7 @@ input[type='time']::-webkit-calendar-picker-indicator { opacity: 0.6; }
 .tab:active .ic { transform: scale(0.88); }
 
 /* Tab change: fade + 8px slide in the direction of travel */
+.app.tab-enter { overflow-x: clip; } /* the slide never adds a horizontal scroll */
 .app.tab-enter > * { animation: tabin var(--d-tab) var(--ease-out) both; }
 @keyframes tabin { from { opacity: 0; transform: translateX(var(--enter-x, -8px)); } to { opacity: 1; transform: none; } }
 
@@ -1112,6 +1113,98 @@ input[type='time']::-webkit-calendar-picker-indicator { opacity: 0.6; }
 }
 .small-add strong { font: var(--t-body-strong); font-size: 15px; line-height: 20px; white-space: nowrap; }
 .small-add span { font: var(--t-caption); color: var(--muted); white-space: nowrap; }
+
+/* ---------- Tile dashboards ("היום" / "מגמות") ---------- */
+.tile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.tile { position: relative; min-width: 0; }
+.tile.full { grid-column: 1 / -1; }
+.tile-open {
+  width: 100%; height: 100%; min-height: 96px; border: 0; cursor: pointer; text-align: start;
+  display: flex; flex-direction: column; justify-content: space-between; gap: var(--s-2);
+  padding: var(--s-3); border-radius: 20px; background: var(--card); box-shadow: inset 0 1px 0 var(--highlight);
+}
+.tile-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tile-head { display: flex; align-items: center; gap: 6px; min-width: 0; min-height: 20px; }
+.tile.has-quick .tile-head { padding-inline-end: 40px; }
+.tile-ic { width: 16px; height: 16px; color: var(--role); }
+.tile-lbl { font: var(--t-caption); color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-val { font: 900 24px/30px var(--font); font-variant-numeric: tabular-nums; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-val small { font: var(--t-caption); font-weight: 700; color: var(--muted); }
+.tile-val .num small { font: 700 16px/1 var(--font); color: var(--muted); }
+.tile.is-empty .tile-val { color: var(--muted); }
+.tile-sub { font: var(--t-caption); font-size: 12px; line-height: 16px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-sub2 { color: var(--text-2); }
+.tile-vis { display: block; }
+.tile-quick {
+  position: absolute; top: var(--s-2); inset-inline-end: var(--s-2); width: 36px; height: 36px; padding: 0; border: 0;
+  border-radius: var(--r-pill); display: grid; place-items: center; cursor: pointer; color: var(--role); background: var(--role-t);
+}
+.tile-quick .ic { width: 18px; height: 18px; }
+.tile.role-steps, .tile.role-protein, .tile.role-water, .tile.role-sleep, .tile.role-breath { --role-t: color-mix(in srgb, var(--role) 16%, transparent); }
+.mini-bar { display: block; height: 4px; border-radius: var(--r-pill); background: var(--track); overflow: hidden; }
+.mini-bar i { display: block; height: 100%; border-radius: inherit; transition: width var(--d-ring) var(--ease-out); }
+.mini-bars, .spark { display: block; width: 100%; height: 30px; overflow: visible; }
+.mb-target { stroke: var(--text-2); stroke-width: 1; stroke-dasharray: 3 2; vector-effect: non-scaling-stroke; opacity: 0.6; }
+.app:not(.settled) .mini-bars rect { transform-origin: bottom; transform-box: fill-box; animation: grow 500ms var(--ease-out) both; }
+.mini-ring { position: relative; display: inline-grid; place-items: center; flex: none; }
+.mini-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mini-ring-in { position: relative; font: var(--t-caption); font-weight: 900; }
+.tile-art { display: inline-grid; place-items: center; width: 36px; height: 36px; border-radius: var(--r-chip); background: var(--role-t); color: var(--role); }
+.tile-art .ic { width: 20px; height: 20px; }
+/* Full-width tile: text on the right, visual on the left */
+.tile.full .tile-open { flex-direction: row; align-items: center; }
+.tile.full .tile-text { flex: 1; }
+.tile.full .tile-vis { flex: none; }
+/* Small tiles with a ring or icon: visual beside the number */
+.tile:not(.full) .tile-vis:has(.mini-ring, .tile-art) { position: absolute; bottom: var(--s-3); inset-inline-end: var(--s-3); }
+.mini-heat { display: block; }
+.delta { font-weight: 700; }
+.delta bdi { unicode-bidi: isolate; }
+.delta.good { color: var(--success); }
+.delta.bad { color: var(--accent); }
+.delta.neutral, .delta.flat, .delta.none { color: var(--muted); font-weight: 500; }
+.app:not(.settled) .tile { animation: itemin 360ms var(--ease-out) both; }
+.app:not(.settled) .tile:nth-child(2) { animation-delay: 25ms; }
+.app:not(.settled) .tile:nth-child(3) { animation-delay: 50ms; }
+.app:not(.settled) .tile:nth-child(4) { animation-delay: 75ms; }
+.app:not(.settled) .tile:nth-child(5) { animation-delay: 100ms; }
+.app:not(.settled) .tile:nth-child(6) { animation-delay: 125ms; }
+.app:not(.settled) .tile:nth-child(n + 7) { animation-delay: 150ms; }
+/* Header row of "היום": edit button + level / streak chips */
+.dash-bar { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); margin-top: calc(var(--s-2) * -1); }
+.dash-chips { display: flex; align-items: center; gap: var(--s-2); }
+.dash-chip {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 var(--s-3) 0 var(--s-2); border: 0; border-radius: var(--r-pill);
+  background: var(--card); box-shadow: inset 0 1px 0 var(--highlight); font: var(--t-caption); font-weight: 700; color: var(--text); white-space: nowrap;
+}
+button.dash-chip { cursor: pointer; }
+.streak-chip .ic { width: 18px; height: 18px; color: var(--muted); }
+.streak-chip.on .ic { color: var(--accent); fill: var(--accent-t); }
+.edit-btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 var(--s-3); border: 0; border-radius: var(--r-pill); cursor: pointer;
+  background: var(--accent-t); color: var(--accent); font: var(--t-caption); font-weight: 700;
+}
+.edit-btn .ic { width: 16px; height: 16px; }
+.dash-head { flex-direction: row; align-items: center; justify-content: space-between; }
+.detail-head h1 { font-size: 28px; line-height: 32px; }
+/* "סידור המסך" */
+.lay-card { padding: var(--s-2); }
+.lay-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-1); }
+.lay-row {
+  display: flex; align-items: center; gap: 6px; padding: var(--s-1) var(--s-2); min-height: 56px; border-radius: var(--r-inner);
+  background: var(--raised); position: relative; transition: opacity var(--d-fast);
+}
+.lay-row.off .lay-name, .lay-row.off .lay-ic { opacity: 0.4; }
+.lay-row.dragging { z-index: 2; box-shadow: var(--shadow-float); background: var(--card); }
+.lay-grip { display: grid; place-items: center; width: 28px; height: 44px; color: var(--muted); cursor: grab; touch-action: none; flex: none; }
+.lay-ic { color: var(--accent); display: grid; place-items: center; }
+.lay-ic .ic { width: 20px; height: 20px; }
+.lay-name { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; }
+.lay-name b { font: var(--t-body-strong); line-height: 20px; }
+.lay-name small { font: var(--t-caption); font-size: 12px; line-height: 16px; color: var(--muted); white-space: nowrap; }
+.lay-row .icon-btn.sm { flex: none; width: 40px; background: none; }
+.lay-row .icon-btn.sm:not(:disabled):active { background: var(--card); }
+.lay-eye[aria-pressed=true] { color: var(--accent); }
 
 /* Narrow phones (360px) */
 @media (max-width: 380px) {

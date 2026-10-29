@@ -22,7 +22,13 @@ import { dayInsights } from '../insights.js';
 import { photoReminderCard, snoozeReminder, startFlow } from './photos.js';
 import { breathCard, startBreathing } from './breathe.js';
 import { foodTotals, completionPct } from '../stats.js';
-import { todayKey } from '../dates.js';
+import { todayKey, lastNDays, addDays, shortDate, longLabel, relativeLabel } from '../dates.js';
+import { breathMinutes, breathGoal } from '../breathing.js';
+import { weightCard, weightAction } from './trends.js';
+import {
+  tilesOn, layoutOf, tile, tileGrid, miniBar, miniRing, miniBars, sparkline, deltaHTML, detailHead, bindSwipeBack, unbindSwipeBack,
+  editButton, EMPTY,
+} from '../tiles.js';
 
 // Unicode isolate for numbers inside plain-text (non-HTML) RTL strings.
 const iso = (s) => `⁦${s}⁩`;
@@ -36,23 +42,13 @@ export function render(root, ctx) {
 
   celebrateNewRecords(ctx, k, rec);
 
-  root.innerHTML = `
-    ${backupBanner()}
-    ${photoReminderCard()}
-    ${dateNav(k, '')}
-    ${heroCard(k, day, st)}
-    ${insightCard(k)}
-    ${stepsCard(day, st, badge)}
-    ${sleepCard(day, st)}
-    ${waterCard(day, st)}
-    ${breathCard(day, k)}
-    ${stairsCard(day, st, badge)}
-    ${ridesCard(day, st, badge)}
-    ${exerciseCards(k, day, ctx, rec)}
-    <button type="button" class="btn rest-btn block press ${day.rest ? 'active' : ''}" data-action="rest" aria-pressed="${day.rest}">
-      ${icon('moon')}<span>${day.rest ? 'יום מנוחה · לביטול' : 'יום מנוחה'}</span>
-    </button>
-    <button type="button" class="btn secondary block press" data-action="copy-daily">${icon('copy')}<span>העתק סיכום יומי</span></button>`;
+  const detail = tilesOn() && DETAILS[ctx.detail?.today] ? ctx.detail.today : null;
+  if (!tilesOn()) root.innerHTML = listHTML(k, day, st, ctx, rec, badge);
+  else if (detail) root.innerHTML = detailHead(DETAILS[detail].title, esc(relativeLabel(k) || longLabel(k))) + DETAILS[detail].html(k, day, st, ctx, rec, badge);
+  else root.innerHTML = gridHTML(k, day, st);
+  if (detail) bindSwipeBack(root, () => ctx.closeDetail());
+  else unbindSwipeBack(root);
+
   // A row that just completed plays its check animation, then collapses after 600 ms.
   if (ctx.openEx && ctx.justCompleted.has(ctx.openEx)) {
     const id = ctx.openEx;
@@ -70,6 +66,179 @@ export function render(root, ctx) {
     if (e.target.dataset.sleep) previewSleep(root);
   };
   bindInsightDots(root);
+}
+
+/** "רשימה מלאה": every card in one long page (the layout before tiles). */
+function listHTML(k, day, st, ctx, rec, badge) {
+  return `
+    ${backupBanner()}
+    ${photoReminderCard()}
+    ${dateNav(k, '')}
+    ${heroCard(k, day, st)}
+    ${insightCard(k)}
+    ${stepsCard(day, st, badge)}
+    ${sleepCard(day, st)}
+    ${waterCard(day, st)}
+    ${breathCard(day, k)}
+    ${stairsCard(day, st, badge)}
+    ${ridesCard(day, st, badge)}
+    ${exerciseCards(k, day, ctx, rec)}
+    ${restButton(day)}
+    ${copyDailyButton()}`;
+}
+
+const restButton = (day) => `<button type="button" class="btn rest-btn block press ${day.rest ? 'active' : ''}" data-action="rest" aria-pressed="${day.rest}">
+      ${icon('moon')}<span>${day.rest ? 'יום מנוחה · לביטול' : 'יום מנוחה'}</span>
+    </button>`;
+const copyDailyButton = () => '<button type="button" class="btn secondary block press" data-action="copy-daily">' +
+  `${icon('copy')}<span>העתק סיכום יומי</span></button>`;
+
+/* ---------- Tiles ---------- */
+
+/** Tile order of "היום" (default layout); full-width tiles span both columns. */
+export const HOME_TILES = [
+  { id: 'workout', label: 'אימון', icon: 'dumbbell', full: true },
+  { id: 'steps', label: 'צעדים', icon: 'steps' },
+  { id: 'protein', label: 'חלבון', icon: 'food' },
+  { id: 'fluids', label: 'נוזלים', icon: 'drop' },
+  { id: 'stairs', label: 'מדרגות', icon: 'stairs' },
+  { id: 'sleep', label: 'שינה', icon: 'bed' },
+  { id: 'breath', label: 'נשימה', icon: 'breath' },
+  { id: 'rides', label: 'אופניים', icon: 'bike' },
+  { id: 'kcal', label: 'קלוריות', icon: 'bolt' },
+  { id: 'weight', label: 'משקל', icon: 'scale' },
+];
+
+/** Detail pages: the existing cards, unchanged. "חלבון" / "קלוריות" open the "אוכל" tab instead. */
+const DETAILS = {
+  workout: { title: 'אימון', html: (k, day, st, ctx, rec) => heroCard(k, day, st) + exerciseCards(k, day, ctx, rec) + restButton(day) },
+  steps: { title: 'צעדים', html: (k, day, st, ctx, rec, badge) => stepsCard(day, st, badge) },
+  fluids: { title: 'נוזלים', html: (k, day, st) => waterCard(day, st) },
+  stairs: { title: 'מדרגות', html: (k, day, st, ctx, rec, badge) => stairsCard(day, st, badge) },
+  sleep: { title: 'שינה', html: (k, day, st) => sleepCard(day, st) },
+  breath: { title: 'נשימה', html: (k, day) => breathCard(day, k) },
+  rides: { title: 'אופניים', html: (k, day, st, ctx, rec, badge) => ridesCard(day, st, badge) },
+  weight: { title: 'משקל', html: (k, day, st) => weightCard(st, getState().weights) },
+};
+const FOOD_TILES = new Set(['protein', 'kcal']);
+
+function gridHTML(k, day, st) {
+  const tiles = homeTiles(k, day, st);
+  const L = levelInfo();
+  const streak = currentStreak();
+  return `
+    ${dateNav(k, '')}
+    <div class="dash-bar">
+      ${editButton('home')}
+      <div class="dash-chips">
+        <button type="button" class="dash-chip press" data-action="achievements" aria-label="רמה ${L.level} · הישגים">
+          ${miniRing('level-dash', L.frac, 'var(--accent)', 24, 3.5)}<span>רמה ${num(L.level)}</span></button>
+        <span class="dash-chip streak-chip ${streak ? 'on' : ''}" aria-label="${streak} ימי רצף">${icon('flame')}<span>${num(streak)}</span></span>
+      </div>
+    </div>
+    ${backupBanner()}
+    ${photoReminderCard()}
+    ${tileGrid(layoutOf('homeLayout', HOME_TILES).filter((x) => x.visible).map((x) => tile(tiles[x.id])))}
+    ${insightCard(k)}
+    ${copyDailyButton()}`;
+}
+
+/** Tile content for day k: one main number each, from the same helpers as the cards. */
+export function homeTiles(k, day, st) {
+  const def = Object.fromEntries(HOME_TILES.map((t) => [t.id, t]));
+  const mk = (id, role, data) => ({ ...def[id], id, role, ...data });
+  const t = {};
+
+  const c = dayCompletion(k);
+  const pct = completionPct(k);
+  const steps = day.steps || 0;
+  const totals = foodTotals(k);
+  const protein = Math.round(totals.protein);
+  // Without exercises the tile shows "—" but keeps the status line (steps, floors, … still apply).
+  t.workout = mk('workout', 'accent', {
+    value: c.total ? `${num(pct)}<small>%</small>` : EMPTY.value,
+    sub: c.total ? `${num(c.done)} מתוך ${num(c.total)} תרגילים${day.rest ? ' · יום מנוחה' : ''}` : EMPTY.sub,
+    sub2: esc(statusLine(day, st, c, steps, protein)),
+    visual: c.total ? miniRing('tile-workout', pct / 100, pct >= 100 ? 'var(--success)' : 'var(--accent)', 64, 7) : '',
+  });
+
+  const sTarget = st.stepsTarget || 0;
+  t.steps = mk('steps', 'steps', {
+    ...(steps ? { value: num(steps), sub: `מתוך ${num(sTarget)}` } : EMPTY),
+    visual: miniBar(sTarget ? steps / sTarget : 0, sTarget && steps >= sTarget ? 'var(--success)' : 'var(--steps)'),
+    quick: { action: 'steps-add', icon: 'plus', label: 'הוספת 1,000 צעדים', attrs: 'data-n="1000"' },
+  });
+
+  const pTarget = st.proteinTarget || 0;
+  const hasFood = (day.food || []).length > 0;
+  t.protein = mk('protein', 'protein', {
+    ...(hasFood ? { value: `${num(protein)}<small> ג׳</small>`, sub: `מתוך ${num(pTarget)}` } : EMPTY),
+    visual: miniBar(pTarget ? protein / pTarget : 0, pTarget && protein >= pTarget ? 'var(--success)' : 'var(--protein)'),
+    quick: { action: 'tile-food', icon: 'search', label: 'חיפוש מזון' },
+  });
+
+  const wTarget = st.waterTarget || 2500;
+  const ml = fluidsMl(day);
+  t.fluids = mk('fluids', 'water', {
+    ...(ml ? { value: `${num(liters(ml))}<small> ל׳</small>`, sub: `מתוך ${num(wTarget / 1000, 2)}` } : EMPTY),
+    visual: miniBar(ml / wTarget, ml >= wTarget ? 'var(--success)' : 'var(--water)'),
+    quick: { action: 'water-quick', icon: 'plus', label: 'הוספת 250 מ״ל מים' },
+  });
+
+  const floors = floorsOf(day), fTarget = floorsTarget(st);
+  const ups = day.climbs.length, downs = (day.descents || []).length;
+  t.stairs = mk('stairs', 'accent', {
+    ...(ups || downs ? {
+      value: frac(fmt(floors), fmt(fTarget)),
+      sub: `${ups === 1 ? 'עלייה אחת' : `${num(ups)} עליות`}${downs ? ` · ${downs === 1 ? 'ירידה אחת' : `${num(downs)} ירידות`}` : ''}`,
+    } : EMPTY),
+    visual: miniBar(fTarget ? floors / fTarget : 0, fTarget && floors >= fTarget ? 'var(--success)' : 'var(--accent)'),
+    quick: { action: 'climb-quick', icon: 'plus', label: 'הוספת עלייה רגילה' },
+  });
+
+  const slTarget = st.sleepTarget || 8;
+  const sl = totalSleepMinutes(day);
+  t.sleep = mk('sleep', 'sleep', {
+    ...(hasSleep(day) ? { value: num(fmtDuration(sl)), sub: targetHTML(slTarget) } : EMPTY),
+    visual: miniBar(sl / (slTarget * 60), sl >= slTarget * 60 ? 'var(--success)' : 'var(--sleep)'),
+  });
+
+  const bGoal = breathGoal(), bMin = breathMinutes(day);
+  t.breath = mk('breath', 'breath', {
+    ...(bMin ? { value: `${num(bMin)}<small> דק׳</small>`, sub: `יעד ${num(bGoal)}` } : EMPTY),
+    visual: miniBar(bMin / bGoal, 'var(--breath)'),
+    quick: { action: 'breath-start', icon: 'play', label: 'תרגול נשימה' },
+  });
+
+  const goal = st.rideGoalKm || 0;
+  const km = day.rides.reduce((a, r) => a + (Number(r.km) || 0), 0);
+  const longest = longestRideKm();
+  t.rides = mk('rides', 'accent', {
+    ...(day.rides.length ? { value: `${num(km)}<small> ק״מ</small>`, sub: `שיא ${num(longest)} · יעד ${num(goal)}` } : EMPTY),
+    visual: miniBar(goal ? longest / goal : 0, goal && longest >= goal ? 'var(--success)' : 'var(--accent)'),
+    quick: { action: 'ride-new', icon: 'plus', label: 'רכיבה חדשה' },
+  });
+
+  const week = lastNDays(7, k);
+  t.kcal = mk('kcal', 'accent', {
+    ...(hasFood ? { value: num(Math.round(totals.kcal)), sub: k === todayKey() ? 'היום' : `קק״ל · ${num(shortDate(k))}` } : EMPTY),
+    visual: miniBars(week.map((d) => Math.round(foodTotals(d).kcal)), { color: 'var(--accent)' }),
+    quick: { action: 'tile-food', icon: 'search', label: 'חיפוש מזון' },
+  });
+
+  // Weight: the latest weigh-in up to day k, compared with the latest one up to a week earlier.
+  const upTo = (key) => getState().weights.filter((w) => w.date <= key);
+  const ws = upTo(k);
+  const cur = ws.at(-1)?.kg, weekAgo = upTo(addDays(k, -7)).at(-1)?.kg;
+  t.weight = mk('weight', 'accent', {
+    ...(ws.length ? {
+      value: `${num(cur)}<small> ק״ג</small>`,
+      sub: deltaHTML(cur, weekAgo, { dir: -1, mode: 'abs', unit: 'ק״ג', none: 'אין שקילה מלפני שבוע' }),
+    } : EMPTY),
+    visual: sparkline(ws.slice(-8).map((w) => w.kg), 'var(--accent)'),
+    quick: { action: 'weight-add', icon: 'plus', label: 'הוספת שקילה' },
+  });
+  return t;
 }
 
 /** Confetti + haptics + toast when an action sets a new personal record on the shown day. */
@@ -259,6 +428,54 @@ function waterCard(day, st) {
       <button type="button" class="water-add press" data-action="water-other">${icon('plus')}<strong>אחר</strong><span>מ״ל</span></button>
     </div>
   </section>`;
+}
+
+/** Tile quick action: +250 ml water on the shown day, with an undo toast. */
+function quickWater(ctx) {
+  const k = ctx.date;
+  const target = getState().settings.waterTarget || 2500;
+  const before = fluidsMl(getDay(k));
+  const entry = { ml: GLASS, time: nowTime() };
+  let index = -1;
+  updateDay(k, (d) => { index = d.water.push(entry) - 1; });
+  const reached = before < target && fluidsMl(getDay(k)) >= target;
+  vibrate(reached ? HAPTIC.target : HAPTIC.item);
+  toast(reached ? 'יעד המים הושג' : `נוספו ${GLASS} מ״ל מים`, {
+    iconHTML: icon('drop'),
+    action: { label: 'ביטול', onClick: () => {
+      updateDay(k, (d) => {
+        const w = d.water[index];
+        if (w && w.ml === entry.ml && w.time === entry.time) d.water.splice(index, 1);
+      });
+      vibrate(HAPTIC.item);
+      ctx.rerender();
+    } },
+  });
+  ctx.rerender();
+}
+
+/** Tile quick action: one regular climb on the shown day, with an undo toast. */
+function quickClimb(ctx) {
+  const k = ctx.date;
+  const st = getState().settings;
+  const entry = { type: 'regular', floors: st.floorsRegular || 0, time: nowTime(), at: Date.now() };
+  const before = floorsOf(getDay(k));
+  updateDay(k, (d) => d.climbs.push(entry));
+  const target = floorsTarget(st);
+  const reached = target && before < target && floorsOf(getDay(k)) >= target;
+  vibrate(reached ? HAPTIC.target : HAPTIC.item);
+  toast(reached ? 'יעד המדרגות הושג' : 'נוספה עלייה רגילה', {
+    iconHTML: icon('stairs'),
+    action: { label: 'ביטול', onClick: () => {
+      updateDay(k, (d) => {
+        const i = d.climbs.findIndex((c) => c.at === entry.at && c.type === 'regular');
+        if (i >= 0) d.climbs.splice(i, 1);
+      });
+      vibrate(HAPTIC.item);
+      ctx.rerender();
+    } },
+  });
+  ctx.rerender();
 }
 
 function addWater(ctx, ml) {
@@ -687,6 +904,28 @@ async function onClick(e, ctx) {
   if (handleDateNav(a, ctx)) return rerender();
 
   switch (a) {
+    case 'tile-open': {
+      const id = b.dataset.tileId;
+      if (FOOD_TILES.has(id)) return ctx.goTab('food'); // the food totals live on "אוכל"
+      return ctx.openDetail(id);
+    }
+    case 'detail-back':
+      return ctx.closeDetail();
+    case 'layout-edit':
+      ctx.layoutFor = b.dataset.layout;
+      ctx.layoutDraft = null;
+      return ctx.goTab('layout');
+    case 'tile-food':
+      ctx.goTab('food');
+      document.querySelector('#app [data-search]')?.focus();
+      return;
+    case 'water-quick':
+      return quickWater(ctx);
+    case 'climb-quick':
+      return quickClimb(ctx);
+    case 'weight-add':
+    case 'weight-del':
+      return weightAction(a, b, ctx, k);
     case 'climb':
     case 'climb-custom': {
       let entry;

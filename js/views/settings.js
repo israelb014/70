@@ -28,6 +28,7 @@ export function render(root, ctx) {
         ${g.keys.includes('climbsTarget') ? `<p class="muted small" data-floors-target>${floorsTargetText(st)}</p>` : ''}
       </section>`
     ).join('')}
+    ${screenModeCard(st)}
     <section class="card">
       <div class="card-head">${icon('dumbbell', 'head-ic')}<h2>תרגילים</h2></div>
       ${exerciseEditorHTML()}
@@ -96,6 +97,19 @@ function productsCard() {
   </section>`;
 }
 
+/** "תצוגת המסכים": tiles (default) or the full card lists on "היום" and "מגמות". */
+function screenModeCard(st) {
+  const list = st.screenMode === 'list';
+  return `<section class="card">
+    <div class="card-head">${icon('today', 'head-ic')}<h2>תצוגת המסכים</h2></div>
+    <div class="segmented two" role="radiogroup" aria-label="תצוגת המסכים">
+      <label><input type="radio" name="screenMode" value="tiles" data-screen-mode ${list ? '' : 'checked'}><span>אריחים</span></label>
+      <label><input type="radio" name="screenMode" value="list" data-screen-mode ${list ? 'checked' : ''}><span>רשימה מלאה</span></label>
+    </div>
+    <p class="muted small">חל על המסכים ״היום״ ו״מגמות״</p>
+  </section>`;
+}
+
 /** "יעד יומי: 36 קומות" = climbsTarget × floorsRegular. */
 function floorsTargetText(st) {
   const t = floorsTarget(st);
@@ -104,7 +118,10 @@ function floorsTargetText(st) {
 
 function onChange(e, ctx) {
   const t = e.target;
-  if (t.dataset.breathSetting) {
+  if (t.matches('[data-screen-mode]')) {
+    updateSettings({ screenMode: t.value });
+    toast('נשמר');
+  } else if (t.dataset.breathSetting) {
     saveBreathSetting(t);
   } else if (t.dataset.photoSetting) {
     savePhotoSetting(t);

@@ -12,7 +12,9 @@ import * as food from './views/food.js';
 import * as trends from './views/trends.js';
 import * as settings from './views/settings.js';
 import * as wizard from './views/wizard.js';
+import * as layout from './views/layout.js';
 import { startBreathing } from './views/breathe.js';
+import { tilesOn } from './tiles.js';
 
 const TABS = [
   { id: 'today', label: 'היום', icon: 'today', view: today },
@@ -22,7 +24,7 @@ const TABS = [
 ];
 
 // Screens reachable without a tab of their own.
-const SCREENS = { achievements, photos, compare: photos.compare };
+const SCREENS = { achievements, photos, compare: photos.compare, layout };
 
 const main = document.getElementById('app');
 const tabbar = document.getElementById('tabbar');
@@ -33,6 +35,8 @@ const ctx = {
   date: todayKey(),
   lastToday: todayKey(),
   justCompleted: new Set(),
+  // Open tile detail page per tab ("היום" / "מגמות"), null = the tile grid.
+  detail: { today: null, trends: null },
   // In-place re-render (after a tap): skip card entrance animations.
   rerender: () => {
     main.classList.add('settled');
@@ -41,17 +45,53 @@ const ctx = {
   goTab: (id) => {
     const from = tabIndex(ctx.tab);
     if (SCREENS[id] && !SCREENS[ctx.tab]) ctx.prevTab = ctx.tab;
+    // A detail page stays open across a visit to a screen (e.g. "הישגים") and back; a tab change closes it.
+    if (!SCREENS[id] && !SCREENS[ctx.tab]) ctx.detail = { today: null, trends: null };
     ctx.tab = id;
-    main.classList.remove('settled');
     // Content fades in and slides 8px in the direction of travel (RTL: higher index = further left).
-    main.style.setProperty('--enter-x', tabIndex(id) >= from ? '-8px' : '8px');
-    main.classList.remove('tab-enter');
-    void main.offsetWidth;
-    main.classList.add('tab-enter');
+    enter(tabIndex(id) >= from ? '-8px' : '8px');
     render();
     window.scrollTo(0, 0);
   },
+  /** Full-screen detail page of a tile: slides in from the left (RTL), back returns to the grid. */
+  openDetail: (id) => {
+    ctx.gridScroll = window.scrollY;
+    ctx.detail[ctx.tab] = id;
+    try { history.pushState({ detail: id }, ''); } catch { /* history unavailable */ }
+    enter('-24px');
+    render();
+    window.scrollTo(0, 0);
+  },
+  closeDetail: (fromHistory = false) => {
+    if (!ctx.detail[ctx.tab]) return;
+    ctx.detail[ctx.tab] = null;
+    if (!fromHistory && history.state?.detail) {
+      ctx.ignorePop = true; // the popstate this causes must not close a detail page opened right after
+      history.back();
+    }
+    enter('24px');
+    render();
+    window.scrollTo(0, ctx.gridScroll || 0);
+  },
 };
+
+/** Entrance animation for the next render (fade + slide by `x`). */
+function enter(x) {
+  main.classList.remove('settled');
+  main.style.setProperty('--enter-x', x);
+  main.classList.remove('tab-enter');
+  void main.offsetWidth;
+  main.classList.add('tab-enter');
+}
+
+// Android back / browser back closes an open detail page.
+window.addEventListener('popstate', () => {
+  if (ctx.ignorePop) {
+    ctx.ignorePop = false;
+    return;
+  }
+  if (ctx.detail[ctx.tab] && !document.querySelector('.sheet-backdrop, .timer-overlay, .celebrate')) ctx.closeDetail(true);
+});
 
 const tabIndex = (id) => {
   const i = TABS.findIndex((t) => t.id === (SCREENS[id] ? ctx.prevTab || 'trends' : id));
@@ -101,6 +141,7 @@ function render() {
   main.oninput = null;
   ctx.fromTab = main.dataset.tab; // the screen shown before this render (photo screens re-veil when entered)
   main.dataset.tab = ctx.tab;
+  main.dataset.detail = (!SCREENS[ctx.tab] && ctx.detail[ctx.tab]) || '';
   (SCREENS[ctx.tab] || TABS.find((t) => t.id === ctx.tab).view).render(main, ctx);
   if (!main.classList.contains('settled')) countUp(main);
   checkProgress();
@@ -141,6 +182,8 @@ tabbar.addEventListener('click', (e) => {
   if (b && b.dataset.tab !== ctx.tab) {
     vibrate(HAPTIC.item);
     ctx.goTab(b.dataset.tab);
+  } else if (b && ctx.detail[ctx.tab]) {
+    ctx.closeDetail(); // tapping the active tab returns to its grid
   }
 });
 
@@ -184,6 +227,7 @@ function runAction(action) {
     startBreathing(ctx);
   } else if (action === 'water') {
     ctx.goTab('today');
+    if (tilesOn()) return ctx.openDetail('fluids'); // tiles: the "נוזלים" detail page
     const card = main.querySelector('.water-card');
     if (!card) return;
     requestAnimationFrame(() => {
