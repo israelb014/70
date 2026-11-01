@@ -9,6 +9,10 @@ const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 const DAY_KEY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+// Bumped on every save / replace, so derived caches (rotation timeline) know when to rebuild.
+let version = 0;
+export const stateVersion = () => version;
+
 export function blankState() {
   return {
     schemaVersion: SCHEMA_VERSION, settings: null, exercises: [], mealPresets: [], days: {}, weights: [],
@@ -105,6 +109,8 @@ export function normalize(d) {
           ? day.descents.filter((x) => isObj(x) && ['regular', 'roof', 'custom'].includes(x.type))
             .map((x) => ({ type: x.type, ...(Number(x.floors) > 0 ? { floors: Number(x.floors) } : {}), ...(TIME_RE.test(x.time) ? { time: x.time } : {}), ...(Number(x.at) > 0 ? { at: Number(x.at) } : {}) }))
           : [],
+        // Rotation: manual workout day type for this date (optional, missing = none).
+        ...(typeof day.workoutDay === 'string' && day.workoutDay ? { workoutDay: day.workoutDay } : {}),
       };
     }
   }
@@ -152,6 +158,7 @@ export function getState() {
 }
 
 export function save() {
+  version++;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     return true;
@@ -174,6 +181,7 @@ export function resetAll() {
     console.warn('Failed to clear data', e);
   }
   state = blankState();
+  version++;
 }
 
 export function uid() {

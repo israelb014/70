@@ -7,7 +7,7 @@ import {
 } from '../ui.js';
 import {
   dayCompletion, currentStreak, exercisesForDay, exerciseProgress, computeRecords, recordIdsOn,
-  longestRideKm, floorsOf, floorsTarget, descentFloorsOf, lastStairsEntry,
+  longestRideKm, floorsOf, floorsTarget, descentFloorsOf, lastStairsEntry, extrasForDay,
 } from '../stats.js';
 import { runTimer } from '../timer.js';
 import {
@@ -24,6 +24,7 @@ import { breathCard, startBreathing } from './breathe.js';
 import { foodTotals, completionPct } from '../stats.js';
 import { todayKey, lastNDays, addDays, shortDate, longLabel, relativeLabel } from '../dates.js';
 import { breathMinutes, breathGoal } from '../breathing.js';
+import { rotation, dayTypeOf, nextTypeAfter, rotationDay, dayLabel, belongs, hasWorkout } from '../rotation.js';
 import { weightCard, weightAction } from './trends.js';
 import {
   tilesOn, layoutOf, tile, tileGrid, miniBar, miniRing, miniBars, sparkline, deltaHTML, detailHead, bindSwipeBack, unbindSwipeBack,
@@ -82,6 +83,7 @@ function listHTML(k, day, st, ctx, rec, badge) {
     ${breathCard(day, k)}
     ${stairsCard(day, st, badge)}
     ${ridesCard(day, st, badge)}
+    ${rotationBar(k)}
     ${exerciseCards(k, day, ctx, rec)}
     ${restButton(day)}
     ${copyDailyButton()}`;
@@ -111,7 +113,7 @@ export const HOME_TILES = [
 
 /** Detail pages: the existing cards, unchanged. "חלבון" / "קלוריות" open the "אוכל" tab instead. */
 const DETAILS = {
-  workout: { title: 'אימון', html: (k, day, st, ctx, rec) => heroCard(k, day, st) + exerciseCards(k, day, ctx, rec) + restButton(day) },
+  workout: { title: 'אימון', html: (k, day, st, ctx, rec) => rotationBar(k) + heroCard(k, day, st) + exerciseCards(k, day, ctx, rec) + restButton(day) },
   steps: { title: 'צעדים', html: (k, day, st, ctx, rec, badge) => stepsCard(day, st, badge) },
   fluids: { title: 'נוזלים', html: (k, day, st) => waterCard(day, st) },
   stairs: { title: 'מדרגות', html: (k, day, st, ctx, rec, badge) => stairsCard(day, st, badge) },
@@ -155,7 +157,10 @@ export function homeTiles(k, day, st) {
   const totals = foodTotals(k);
   const protein = Math.round(totals.protein);
   // Without exercises the tile shows "—" but keeps the status line (steps, floors, … still apply).
+  // With a workout rotation the label is the day type ("יום א׳ · ידיים וגוף עליון").
+  const type = rotationDay(dayTypeOf(k));
   t.workout = mk('workout', 'accent', {
+    ...(type ? { label: dayLabel(type) } : {}),
     value: c.total ? `${num(pct)}<small>%</small>` : EMPTY.value,
     sub: c.total ? `${num(c.done)} מתוך ${num(c.total)} תרגילים${day.rest ? ' · יום מנוחה' : ''}` : EMPTY.sub,
     sub2: esc(statusLine(day, st, c, steps, protein)),
@@ -739,8 +744,50 @@ function rideSheet() {
   });
 }
 
+/**
+ * Rotation: chips with every workout day (the current one selected; tapping another switches this
+ * date's type) and "הבא בתור". Nothing without a rotation or before its start date.
+ */
+function rotationBar(k) {
+  const r = rotation();
+  const type = dayTypeOf(k);
+  if (!r || !type) return '';
+  const next = rotationDay(nextTypeAfter(k));
+  return `<section class="card rot-bar role-accent" aria-label="סבב אימונים">
+    <div class="rot-chips" role="radiogroup" aria-label="יום האימון">
+      ${r.days.map((d) => `<button type="button" class="rot-chip press ${d.id === type ? 'on' : ''}" role="radio" aria-checked="${d.id === type}"
+        data-action="rot-day" data-id="${d.id}">${esc(d.name)}</button>`).join('')}
+    </div>
+    ${rotationDay(type)?.subtitle ? `<p class="rot-sub">${esc(rotationDay(type).subtitle)}</p>` : ''}
+    <p class="rot-next muted small" data-rot-next>הבא בתור: ${esc(dayLabel(next))}</p>
+  </section>`;
+}
+
+/** Rotation: "תרגילים מימים אחרים" — any other exercise can be logged as an extra (not part of the day's %). */
+function extrasSection(k, day, ctx, rec) {
+  const extras = extrasForDay(k);
+  if (!extras.length) return '';
+  const logged = extras.filter((ex) => exerciseProgress(ex, day.exercises[ex.id]) > 0).length;
+  const open = !!ctx.showExtras; // collapsed until opened
+  return `<section class="card ex-list-card extras-card role-accent ${open ? 'open' : ''}">
+    <button type="button" class="extras-head press" data-action="extras-toggle" aria-expanded="${open}">
+      ${icon('plus', 'head-ic')}<h2>תרגילים מימים אחרים</h2>
+      ${logged ? `<span class="muted small">${num(logged)} נרשמו</span>` : ''}${icon('down', 'ex-chev')}
+    </button>
+    ${open ? `<p class="muted small">נשמרים כרגיל, ולא נספרים באחוז ההשלמה של היום</p>
+      <div class="ex-rows">${extras.map((ex) => exerciseRow(ex, day.exercises[ex.id], ctx, rec)).join('')}</div>` : ''}
+  </section>`;
+}
+
 function exerciseCards(k, day, ctx, rec) {
+  return exerciseListCard(k, day, ctx, rec) + extrasSection(k, day, ctx, rec);
+}
+
+function exerciseListCard(k, day, ctx, rec) {
   const list = exercisesForDay(k);
+  if (!list.length && extrasForDay(k).length) {
+    return `<section class="card empty-card">${emptyState('dumbbell', 'אין תרגילים ליום הזה. אפשר לשייך תרגילים לימים בהגדרות.')}</section>`;
+  }
   if (!list.length) {
     return `<section class="card empty-card">${emptyState('dumbbell', 'עדיין לא הוגדרו תרגילים. אפשר להוסיף אותם בהגדרות.',
       '<button type="button" class="btn secondary press" data-action="go-settings">הוספת תרגילים</button>')}</section>`;
@@ -873,6 +920,7 @@ function maxRepsBody(ex, entry) {
 
 /** Runs a mutation and, if it completes the exercise, triggers vibration + check draw-in. */
 function trackCompletion(ctx, ex, fn) {
+  pinDayType(ctx.date, ex);
   const before = exerciseProgress(ex, getDay(ctx.date).exercises[ex.id]);
   fn();
   const after = exerciseProgress(ex, getDay(ctx.date).exercises[ex.id]);
@@ -880,6 +928,15 @@ function trackCompletion(ctx, ex, fn) {
     ctx.justCompleted.add(ex.id);
     vibrate(HAPTIC.target);
   }
+}
+
+/**
+ * Logging an extra (an exercise of another day type) must not turn the day into that type: the
+ * current type is stored as this date's choice first.
+ */
+function pinDayType(k, ex) {
+  const type = dayTypeOf(k);
+  if (type && !belongs(ex, type) && !getState().days[k]?.workoutDay) updateDay(k, (d) => (d.workoutDay = type));
 }
 
 /** Remember reps and weight per set number, so the next session prefills set by set. */
@@ -915,6 +972,18 @@ async function onClick(e, ctx) {
       ctx.layoutFor = b.dataset.layout;
       ctx.layoutDraft = null;
       return ctx.goTab('layout');
+    case 'rot-day': {
+      const id = b.dataset.id;
+      if (id === dayTypeOf(k)) return;
+      if (hasWorkout(k) && !(await confirmDialog(`כבר נרשמו סטים היום. להחליף את היום ל"${rotationDay(id)?.name}"?`, { title: 'החלפת יום אימון', ok: 'החלפה' }))) return;
+      updateDay(k, (d) => (d.workoutDay = id));
+      vibrate(HAPTIC.item);
+      ctx.openEx = null;
+      return rerender();
+    }
+    case 'extras-toggle':
+      ctx.showExtras = !b.closest('.extras-card').classList.contains('open');
+      return rerender();
     case 'tile-food':
       ctx.goTab('food');
       document.querySelector('#app [data-search]')?.focus();

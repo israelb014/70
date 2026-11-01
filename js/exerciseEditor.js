@@ -1,6 +1,7 @@
 // Exercise list editor (add / edit / delete / reorder). Shared by the wizard and settings.
 import { activeExercises, upsertExercise, archiveExercise, moveExercise, exerciseById } from './storage.js';
 import { icon, esc, openSheet, confirmDialog, parseNum, invalid, num } from './ui.js';
+import { rotation, exDays } from './rotation.js';
 
 export const TYPE_LABELS = {
   setsReps: 'סטים × חזרות',
@@ -18,6 +19,26 @@ export function targetText(ex) {
   return t;
 }
 
+/** Rotation: "כל יום" / "יום א׳, יום ג׳"; '' without a rotation. */
+function daysText(ex) {
+  const r = rotation();
+  if (!r) return '';
+  const d = exDays(ex);
+  if (d.includes('all')) return 'כל יום';
+  return r.days.filter((x) => d.includes(x.id)).map((x) => x.name).join(', ') || 'כל יום';
+}
+
+/** "באילו ימים" chips: "כל יום" + one per workout day (multi-select; "כל יום" excludes the others). */
+function daysField(ex) {
+  const r = rotation();
+  if (!r) return '';
+  const d = exDays(ex);
+  const all = d.includes('all') || !r.days.some((x) => d.includes(x.id));
+  const chip = (value, label, on) => `<label class="day-chip"><input type="checkbox" name="days" value="${value}" ${on ? 'checked' : ''}><span>${esc(label)}</span></label>`;
+  return `<fieldset class="field days-field"><legend>באילו ימים</legend>
+    <div class="day-chips">${chip('all', 'כל יום', all)}${r.days.map((x) => chip(x.id, x.name, !all && d.includes(x.id))).join('')}</div></fieldset>`;
+}
+
 export function exerciseEditorHTML() {
   const list = activeExercises();
   const rows = list
@@ -26,6 +47,7 @@ export function exerciseEditorHTML() {
         <div class="ex-row-main">
           <strong>${esc(ex.name)}</strong>
           <span class="muted small">${TYPE_LABELS[ex.type]} · ${targetText(ex)}</span>
+          ${daysText(ex) ? `<span class="ex-days small" data-ex-days>${esc(daysText(ex))}</span>` : ''}
         </div>
         <div class="ex-row-actions">
           <button type="button" class="icon-btn sm press" data-action="ex-up" data-id="${ex.id}" aria-label="הזזה למעלה" ${i === 0 ? 'disabled' : ''}>${icon('up')}</button>
@@ -89,7 +111,8 @@ async function editExercise(ex) {
       ${field('seconds', 'שניות יעד', e.seconds ?? 60, 'min="1" data-types="timed"')}
       ${field('maxReps', 'יעד חזרות (רשות)', e.type === 'maxReps' ? e.reps : '', 'min="1" data-types="maxReps"')}
       ${field('weight', 'משקל לכל יד, ק״ג (רשות)', e.weight, 'min="0" step="0.5"')}
-    </div>`;
+    </div>
+    ${daysField(e)}`;
 
   const sync = (root) => {
     const type = root.querySelector('input[name=type]:checked').value;
@@ -104,6 +127,13 @@ async function editExercise(ex) {
     onOpen: (root) => {
       sync(root);
       root.querySelectorAll('input[name=type]').forEach((r) => r.addEventListener('change', () => sync(root)));
+      // "כל יום" and specific days exclude each other; nothing selected falls back to "כל יום".
+      root.querySelectorAll('input[name=days]').forEach((c) => c.addEventListener('change', () => {
+        const boxes = [...root.querySelectorAll('input[name=days]')];
+        if (c.value === 'all' && c.checked) boxes.forEach((x) => { if (x !== c) x.checked = false; });
+        else if (c.value !== 'all' && c.checked) boxes[0].checked = false;
+        if (!boxes.some((x) => x.checked)) boxes[0].checked = true;
+      }));
       if (!ex) setTimeout(() => root.querySelector('input[name=name]').focus(), 300);
     },
     actions: [
@@ -118,6 +148,10 @@ async function editExercise(ex) {
           const type = root.querySelector('input[name=type]:checked').value;
           const weight = parseNum(q('weight').value);
           const out = { id: ex?.id, name, type, weight: weight > 0 ? weight : null, sets: null, reps: null, seconds: null };
+          if (rotation()) {
+            const picked = [...root.querySelectorAll('input[name=days]:checked')].map((x) => x.value);
+            out.days = !picked.length || picked.includes('all') ? ['all'] : picked;
+          }
           if (type === 'setsReps') {
             out.sets = Math.round(parseNum(q('sets').value));
             out.reps = Math.round(parseNum(q('reps').value));

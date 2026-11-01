@@ -33,6 +33,7 @@ const APP_FILES = [
   './js/timepicker.js',
   './js/heatmap.js',
   './js/tiles.js',
+  './js/rotation.js',
   './js/badgeArt.js',
   './js/celebrate.js',
   './js/views/today.js',

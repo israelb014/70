@@ -4,11 +4,18 @@
 import { getState, getDay, activeExercises, exerciseById } from './storage.js';
 import { addDays, lastNDays, todayKey, weekdayName, parseKey } from './dates.js';
 import { breathMinutes, sleepAfterBreathing } from './breathing.js';
-import { foodTotals, dayCompletion, exercisesForDay, computeRecords, fluidsMl, floorsOf, floorsTarget, descentFloorsOf } from './stats.js';
+import { foodTotals, dayCompletion, exercisesForDay, loggedExtras, computeRecords, fluidsMl, floorsOf, floorsTarget, descentFloorsOf } from './stats.js';
 import { sleepMinutes, fmtDuration, walkHistory, BADGES, durText, totalSleepMinutes, hasSleep, napsMinutes } from './progress.js';
 import { int, trim, plural } from './hebrew.js';
+import { typeCounts } from './rotation.js';
 
 /* ---------- helpers ---------- */
+
+/** "2 ימי ידיים" / "יום רגליים אחד" (by the subtitle); without one: "יום א׳ פעמיים"-style counts by name. */
+export function rotationText(d, n) {
+  if (d.subtitle) return n === 1 ? `יום ${d.subtitle} אחד` : `${int(n)} ימי ${d.subtitle}`;
+  return n === 1 ? `${d.name} פעם אחת` : `${d.name} ${int(n)} פעמים`;
+}
 
 const r10 = (n) => Math.round(n / 10) * 10;
 const kcalText = (n) => `${int(r10(n))} קק״ל`;
@@ -125,7 +132,7 @@ export function dayInsights(k) {
     out.push(day(`newRecord:${e.id}`, recordText(e.id, e.value, exName), 'positive', 90, e.id.includes(':') ? 'strength' : 'activity'));
   }
   const newIds = new Set(events.filter((ev) => ev.date === k).map((ev) => ev.id));
-  for (const ex of exercisesForDay(k)) {
+  for (const ex of [...exercisesForDay(k), ...loggedExtras(k)]) {
     const b = entryBest(ex, d.exercises[ex.id]);
     const check = (key, val, txt) => {
       const rec = records.find((r) => r.id === `${key}:${ex.id}`);
@@ -224,6 +231,13 @@ export function weekInsights(today = todayKey()) {
         ? `ממוצע השינה ${up ? 'עלה' : 'ירד'} מ-${fmtDuration(vb)} ל-${fmtDuration(va)} שעות לעומת השבוע הקודם`
         : `${m.name} ${up ? 'עלה' : 'ירד'} ב-${Math.abs(pct)}% לעומת השבוע הקודם`;
     out.push(week(`wow:${m.id}`, text, kind, base + Math.min(15, Math.round(Math.abs(pct) / 10)), m.cat));
+  }
+
+  // Rotation: workout days per type this week (after at least 2 full rotations).
+  const tc = typeCounts(cur[0], cur[6]);
+  if (tc && tc.total >= 2 * tc.rotation.days.length) {
+    const parts = tc.rotation.days.filter((d) => tc.counts.get(d.id) > 0).map((d) => rotationText(d, tc.counts.get(d.id)));
+    if (parts.length) out.push(week('rotation', `השבוע: ${parts.join(', ')}`, 'neutral', 50, 'strength'));
   }
 
   // Breathing → that night's sleep (all history, ≥ 5 nights per group, |diff| ≥ 20 min). Factual, no claims.

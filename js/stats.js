@@ -2,6 +2,7 @@
 import { getState, getDay, exerciseById, activeExercises } from './storage.js';
 import { todayKey, addDays } from './dates.js';
 import { drinksMl } from './fluids.js';
+import { dayTypeOf, belongs } from './rotation.js';
 
 /** Fraction (0..1) of an exercise's target achieved for a day entry. */
 export function exerciseProgress(ex, entry) {
@@ -21,8 +22,28 @@ export function exerciseProgress(ex, entry) {
   return ex.reps ? Math.min(1, reps / ex.reps) : 1;
 }
 
-/** Exercises to show on a given day: active ones, plus archived ones that have data that day. */
+/**
+ * Exercises of a given day: active ones, plus archived ones that have data that day. With a workout
+ * rotation, only the exercises of that day's type (and "כל יום" ones); the others are extras.
+ */
 export function exercisesForDay(k) {
+  const type = dayTypeOf(k);
+  return allForDay(k).filter((ex) => belongs(ex, type));
+}
+
+/** Rotation: exercises of other day types (active, or archived with data that day). Empty without a rotation. */
+export function extrasForDay(k) {
+  const type = dayTypeOf(k);
+  return type ? allForDay(k).filter((ex) => !belongs(ex, type)) : [];
+}
+
+/** Extras with something logged on day k (saved normally, never part of the day's completion). */
+export function loggedExtras(k) {
+  const day = getDay(k);
+  return extrasForDay(k).filter((ex) => exerciseProgress(ex, day.exercises[ex.id]) > 0);
+}
+
+function allForDay(k) {
   const day = getDay(k);
   const list = activeExercises();
   const ids = new Set(list.map((e) => e.id));

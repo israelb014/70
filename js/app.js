@@ -195,7 +195,7 @@ bindLongPress(main, '[data-long]', (el) => {
 
 // Enter in a single-line field commits it (fires change) instead of doing nothing.
 main.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && e.target.matches('input[data-change], input[data-setting]') && getState().settings) {
+  if (e.key === 'Enter' && e.target.matches('input[data-change], input[data-setting], input[data-rot-field]') && getState().settings) {
     e.target.blur();
   }
 });

@@ -1,5 +1,7 @@
 // "הגדרות" tab: goals, exercise editor, backup / restore, delete all data, version.
-import { getState, updateSettings, resetAll, upsertCustomFood, deleteCustomFood } from '../storage.js';
+import { getState, updateSettings, resetAll, upsertCustomFood, deleteCustomFood, uid, save } from '../storage.js';
+import { DAY_NAMES, MIN_DAYS, MAX_DAYS } from '../rotation.js';
+import { todayKey } from '../dates.js';
 import { icon, esc, num, toast, confirmDialog, invalid } from '../ui.js';
 import { productSheet } from '../foodSheets.js';
 import { SETTINGS_FIELDS, fieldHTML, validateField } from './wizard.js';
@@ -29,6 +31,7 @@ export function render(root, ctx) {
       </section>`
     ).join('')}
     ${screenModeCard(st)}
+    ${rotationCard(st)}
     <section class="card">
       <div class="card-head">${icon('dumbbell', 'head-ic')}<h2>תרגילים</h2></div>
       ${exerciseEditorHTML()}
@@ -97,6 +100,43 @@ function productsCard() {
   </section>`;
 }
 
+/** "תוכנית אימונים": every exercise every day (default), or a rotation of 2–4 workout days. */
+function rotationCard(st) {
+  const r = st.rotation || {};
+  const on = r.mode === 'rotation';
+  const days = Array.isArray(r.days) ? r.days : [];
+  return `<section class="card rot-card">
+    <div class="card-head">${icon('dumbbell', 'head-ic')}<h2>תוכנית אימונים</h2></div>
+    <div class="segmented two" role="radiogroup" aria-label="תוכנית אימונים">
+      <label><input type="radio" name="rotMode" value="all" data-rot-mode ${on ? '' : 'checked'}><span>כל התרגילים כל יום</span></label>
+      <label><input type="radio" name="rotMode" value="rotation" data-rot-mode ${on ? 'checked' : ''}><span>סבב ימים</span></label>
+    </div>
+    ${on ? `<ol class="rot-days">${days.map((d, i) => `<li class="rot-day" data-rot-i="${i}">
+        <div class="rot-fields">
+          <label class="field"><span>שם</span><input type="text" maxlength="20" data-rot-field="name" data-i="${i}" value="${esc(d.name)}" autocomplete="off" enterkeyhint="done"></label>
+          <label class="field"><span>תיאור (רשות)</span><input type="text" maxlength="40" data-rot-field="subtitle" data-i="${i}" value="${esc(d.subtitle || '')}" placeholder="למשל ידיים וגוף עליון" autocomplete="off" enterkeyhint="done"></label>
+        </div>
+        <div class="rot-actions">
+          <button type="button" class="icon-btn sm press" data-action="rot-up" data-i="${i}" aria-label="הזזה למעלה" ${i ? '' : 'disabled'}>${icon('up')}</button>
+          <button type="button" class="icon-btn sm press" data-action="rot-down" data-i="${i}" aria-label="הזזה למטה" ${i < days.length - 1 ? '' : 'disabled'}>${icon('down')}</button>
+          <button type="button" class="icon-btn sm press danger-ic" data-action="rot-del" data-i="${i}" aria-label="הסרת יום" ${days.length > MIN_DAYS ? '' : 'disabled'}>${icon('trash')}</button>
+        </div>
+      </li>`).join('')}</ol>
+      ${days.length < MAX_DAYS ? `<button type="button" class="btn secondary block press" data-action="rot-add">${icon('plus')}<span>הוספת יום</span></button>` : ''}
+      <p class="muted small">בכל תרגיל אפשר לבחור באילו ימים הוא מופיע. ימי מנוחה וימים בלי אימון לא מקדמים את הסבב.</p>` : ''}
+  </section>`;
+}
+
+/** Save the rotation (a copy) and re-render. */
+function saveRotation(ctx, fn) {
+  const r = structuredClone(getState().settings.rotation || { mode: 'all', days: [] });
+  fn(r);
+  updateSettings({ rotation: r });
+  ctx.rerender();
+}
+
+const newDay = (days) => ({ id: `d${uid()}`, name: DAY_NAMES.find((n) => !days.some((d) => d.name === n)) || DAY_NAMES[days.length] || 'יום', subtitle: '' });
+
 /** "תצוגת המסכים": tiles (default) or the full card lists on "היום" and "מגמות". */
 function screenModeCard(st) {
   const list = st.screenMode === 'list';
@@ -118,7 +158,27 @@ function floorsTargetText(st) {
 
 function onChange(e, ctx) {
   const t = e.target;
-  if (t.matches('[data-screen-mode]')) {
+  if (t.matches('[data-rot-mode]')) {
+    saveRotation(ctx, (r) => {
+      r.mode = t.value;
+      if (t.value === 'rotation') {
+        if (!r.startDate) r.startDate = todayKey(); // first switch: the rotation starts today
+        r.days = Array.isArray(r.days) ? r.days : [];
+        while (r.days.length < MIN_DAYS) r.days.push(newDay(r.days));
+      }
+    });
+    toast('נשמר');
+  } else if (t.dataset.rotField) {
+    const i = Number(t.dataset.i), field = t.dataset.rotField;
+    const v = t.value.trim();
+    if (field === 'name' && !v) {
+      invalid(t, 'יש להזין שם');
+      t.value = getState().settings.rotation.days[i].name;
+      return;
+    }
+    saveRotation(ctx, (r) => { r.days[i][field] = v; });
+    toast('נשמר');
+  } else if (t.matches('[data-screen-mode]')) {
     updateSettings({ screenMode: t.value });
     toast('נשמר');
   } else if (t.dataset.breathSetting) {
@@ -155,6 +215,19 @@ async function onClick(e, ctx, root) {
     return;
   }
   switch (a) {
+    case 'rot-up':
+    case 'rot-down': {
+      const i = Number(b.dataset.i), j = a === 'rot-up' ? i - 1 : i + 1;
+      return saveRotation(ctx, (r) => { [r.days[i], r.days[j]] = [r.days[j], r.days[i]]; });
+    }
+    case 'rot-add':
+      return saveRotation(ctx, (r) => { if (r.days.length < MAX_DAYS) r.days.push(newDay(r.days)); });
+    case 'rot-del': {
+      const d = getState().settings.rotation.days[Number(b.dataset.i)];
+      if (!d || !(await confirmDialog(`להסיר את "${d.name}" מהסבב? תרגילים שהיו רק ביום הזה יופיעו בכל יום.`, { title: 'הסרת יום', ok: 'הסרה', danger: true }))) return;
+      unassignDay(d.id);
+      return saveRotation(ctx, (r) => { if (r.days.length > MIN_DAYS) r.days = r.days.filter((x) => x.id !== d.id); });
+    }
     case 'prod-add':
     case 'prod-edit': {
       const product = a === 'prod-edit' ? getState().customFoods.find((p) => p.id === b.dataset.id) : {};
@@ -207,6 +280,16 @@ async function onClick(e, ctx, root) {
       ctx.rerender();
     }
   }
+}
+
+/** A removed workout day leaves every exercise's day list; an exercise left with none shows every day. */
+function unassignDay(id) {
+  for (const ex of getState().exercises) {
+    if (!Array.isArray(ex.days) || !ex.days.includes(id)) continue;
+    ex.days = ex.days.filter((x) => x !== id);
+    if (!ex.days.length) ex.days = ['all'];
+  }
+  save();
 }
 
 async function importFile(file, ctx) {

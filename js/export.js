@@ -1,12 +1,13 @@
 // Daily / weekly text summaries (clipboard) and JSON backup export / import.
 import { getState, getDay, validateBackup, replaceState, updateMeta } from './storage.js';
 import { lastNDays, todayKey, shortDate, weekdayName, fullDate } from './dates.js';
-import { computeRecords, exercisesForDay, foodTotals, floorsOf, floorsTarget, descentFloorsOf, dayCompletion, completionPct, sortedFood, waterMl, drinksMl } from './stats.js';
+import { computeRecords, exercisesForDay, loggedExtras, foodTotals, floorsOf, floorsTarget, descentFloorsOf, dayCompletion, completionPct, sortedFood, waterMl, drinksMl } from './stats.js';
 import { fmt } from './ui.js';
 import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES, dayXP, durText, napMinutes, napsMinutes, totalSleepMinutes, sortedNaps } from './progress.js';
 import { int, dec1, dec2, trim, iso, plural, unitAmount } from './hebrew.js';
 import { dayInsights, weekInsights } from './insights.js';
 import { breathMinutes, techniqueById } from './breathing.js';
+import { dayTypeOf, rotationDay, dayLabel, hasWorkout } from './rotation.js';
 
 // Right-to-left mark: makes a line that starts with Latin text ("XP …") lay out right-to-left.
 const RLM = '\u200F';
@@ -98,10 +99,14 @@ export function dailySummary(k) {
     const t = exerciseLine(ex, day.exercises[ex.id]);
     if (t) exLines.push(`• ${ex.name}: ${t}`);
   }
+  // Rotation: extras (exercises of other day types) under "תוספות:", in the same format.
+  const extraLines = loggedExtras(k).map((ex) => `• ${ex.name}: ${exerciseLine(ex, day.exercises[ex.id])}`);
   const hasExercise = exLines.length > 0;
   if (day.rest) exLines.push('• יום מנוחה');
+  if (extraLines.length) exLines.push('תוספות:', ...extraLines);
   if (exLines.length) {
-    const sec = ['אימון:', ...exLines];
+    const type = rotationDay(dayTypeOf(k));
+    const sec = [type ? `אימון — ${dayLabel(type)}:` : 'אימון:', ...exLines];
     const c = dayCompletion(k);
     if (hasExercise && c.total) {
       sec.push(`השלמה: ${completionPct(k)}% (${c.done} מתוך ${c.total === 1 ? 'תרגיל אחד' : `${c.total} תרגילים`})`);
@@ -174,7 +179,9 @@ export function weeklySummary() {
 
   for (const k of keys) {
     const day = getDay(k);
-    lines.push(`יום ${weekdayName(k)} ${shortDate(k)}${day.rest ? ' · יום מנוחה' : ''}`);
+    // Rotation: the workout day name on days with a workout (or a chosen type).
+    const type = (hasWorkout(k) || day.workoutDay) ? rotationDay(dayTypeOf(k)) : null;
+    lines.push(`יום ${weekdayName(k)} ${shortDate(k)}${type ? ` · ${type.name}` : ''}${day.rest ? ' · יום מנוחה' : ''}`);
     const body = [];
     if (day.steps) body.push(`צעדים: ${fmt(day.steps)}`);
     if (day.climbs.length) body.push(`מדרגות: ${climbsText(day)}`);
@@ -182,7 +189,7 @@ export function weeklySummary() {
     for (const r of day.rides) {
       body.push(`רכיבה: ${fmt(r.km)} ק״מ${r.minutes ? ` · ${fmt(r.minutes)} דק׳` : ''}${r.note ? ` (${r.note})` : ''}`);
     }
-    for (const ex of exercisesForDay(k)) {
+    for (const ex of [...exercisesForDay(k), ...loggedExtras(k)]) {
       const t = exerciseLine(ex, day.exercises[ex.id]);
       if (t) body.push(`${ex.name}: ${t}`);
     }

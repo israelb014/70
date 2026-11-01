@@ -1206,6 +1206,40 @@ button.dash-chip { cursor: pointer; }
 .lay-row .icon-btn.sm:not(:disabled):active { background: var(--card); }
 .lay-eye[aria-pressed=true] { color: var(--accent); }
 
+/* ---------- Workout rotation ("סבב אימונים") ---------- */
+.rot-days { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s-2); }
+.rot-day { display: flex; align-items: flex-end; gap: var(--s-2); padding: var(--s-3); border-radius: var(--r-inner); background: var(--raised); }
+.rot-fields { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr); gap: var(--s-2); }
+.rot-actions { display: flex; flex-direction: column; gap: 2px; }
+.rot-actions .icon-btn.sm { width: 36px; height: 32px; background: none; }
+.rot-bar { gap: var(--s-2); padding: var(--s-3); }
+.rot-chips { display: flex; gap: var(--s-2); overflow-x: auto; scrollbar-width: none; }
+.rot-chip {
+  flex: 1 0 auto; min-height: 40px; padding: 0 var(--s-3); border: 0; border-radius: var(--r-pill); cursor: pointer; white-space: nowrap;
+  background: var(--raised); color: var(--text-2); font: var(--t-body-strong); font-size: 15px;
+}
+.rot-chip.on { background: var(--accent); color: var(--ink); }
+.rot-sub { font: var(--t-body-strong); color: var(--text); padding-inline: var(--s-1); }
+.rot-next { padding-inline: var(--s-1); }
+.extras-head {
+  display: flex; align-items: center; gap: var(--s-3); width: 100%; min-height: var(--icon-tile); padding: 0; border: 0; background: none;
+  cursor: pointer; text-align: start; color: inherit;
+}
+.extras-head h2 { flex: 1; min-width: 0; font-size: 17px; }
+.extras-card.open .extras-head .ex-chev { transform: rotate(180deg); }
+.days-field { border: 0; margin: 0; padding: 0; }
+.days-field legend { padding: 0; margin-bottom: var(--s-2); }
+.day-chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.day-chip { position: relative; }
+.day-chip input { position: absolute; opacity: 0; }
+.day-chip span {
+  display: inline-flex; align-items: center; min-height: 40px; padding: 0 var(--s-3); border-radius: var(--r-pill); cursor: pointer;
+  background: var(--sunken); color: var(--muted); font: var(--t-caption); font-weight: 700; box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.day-chip input:checked + span { background: var(--accent-t); color: var(--accent); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.day-chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ex-days { color: var(--accent); font-weight: 700; }
+
 /* Narrow phones (360px) */
 @media (max-width: 380px) {
   :root { --gutter: var(--s-4); }
@@ -1216,4 +1250,5 @@ button.dash-chip { cursor: pointer; }
   .rings3 { width: 150px !important; height: 150px !important; }
   .level-chip { padding-inline: var(--s-1) var(--s-2); gap: var(--s-1); }
   .rings3 .ring-big { font-size: 34px; line-height: 38px; }
+  .rot-fields { grid-template-columns: minmax(0, 1fr); }
 }
