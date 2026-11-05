@@ -1240,6 +1240,40 @@ button.dash-chip { cursor: pointer; }
 .day-chip input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .ex-days { color: var(--accent); font-weight: 700; }
 
+/* ---------- Smart coach ("מאמן חכם") ---------- */
+.plan-card { gap: var(--s-3); }
+.plan-head { display: flex; align-items: center; gap: var(--s-3); }
+.plan-head h2 { font: var(--t-title); font-size: 24px; line-height: 30px; }
+.int-chip { flex: none; padding: var(--s-1) var(--s-3); border-radius: var(--r-pill); font: var(--t-caption); font-weight: 700; white-space: nowrap; }
+.int-full { background: var(--success-t); color: var(--success); }
+.int-normal { background: var(--accent-t); color: var(--accent); }
+.int-light { background: var(--water-t); color: var(--water); }
+.plan-reason { font: var(--t-body); color: var(--text-2); }
+.plan-suggest { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.plan-suggest .chip-btn { display: inline-flex; align-items: center; gap: 6px; }
+.plan-suggest .ic { width: 18px; height: 18px; }
+.plan-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.plan-tomorrow { padding-top: var(--s-2); border-top: 1px solid var(--line); }
+.coach-banner { padding: var(--s-4); gap: var(--s-3); }
+.coach-banner .bb-head .btn { flex: none; min-height: 40px; }
+.coach-banner .bb-text strong { white-space: normal; }
+.group-q { font: var(--t-body); }
+.group-q b { font-weight: 700; }
+.group-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); }
+.group-chips .chip-btn, .plan-suggest .chip-btn { flex: 0 0 auto; padding: 0 var(--s-3); border-radius: var(--r-pill); background: var(--accent-t); color: var(--accent); font-size: 15px; }
+.prog-line { display: flex; align-items: center; gap: var(--s-2); margin: calc(var(--s-1) * -1) var(--s-4) var(--s-3); padding: var(--s-1) var(--s-3);
+  border-radius: var(--r-chip); background: var(--success-t); color: var(--success); font: var(--t-caption); font-weight: 700; }
+.prog-line.down { background: var(--accent-t2); color: var(--text-2); }
+.prog-line .ic { width: 16px; height: 16px; flex: none; }
+.prog-line .link-btn { min-height: 28px; flex: none; }
+.weight-chips { display: flex; flex-wrap: wrap; gap: var(--s-2); }
+.weight-chip { display: inline-flex; align-items: center; gap: var(--s-1); min-height: 36px; padding-inline: var(--s-3) var(--s-1); border-radius: var(--r-pill);
+  background: var(--raised); font: var(--t-body-strong); font-size: 15px; }
+.weight-del { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: var(--r-pill); background: none; color: var(--muted); cursor: pointer; }
+.weight-del .ic { width: 16px; height: 16px; }
+.seg-chips { display: flex; flex-wrap: wrap; gap: var(--s-2); margin-bottom: var(--s-3); }
+.tile-sub3 { color: var(--accent); }
+
 /* Narrow phones (360px) */
 @media (max-width: 380px) {
   :root { --gutter: var(--s-4); }

@@ -34,6 +34,7 @@ const APP_FILES = [
   './js/heatmap.js',
   './js/tiles.js',
   './js/rotation.js',
+  './js/coach.js',
   './js/badgeArt.js',
   './js/celebrate.js',
   './js/views/today.js',

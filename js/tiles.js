@@ -45,7 +45,7 @@ export const defaultLayout = (defs) => defs.map((d) => ({ id: d.id, visible: tru
 export const EMPTY = { value: '—', sub: 'עוד אין נתונים', empty: true };
 
 /**
- * One tile. t: { id, role, icon, label, value, sub, sub2 (second line), visual, full, empty, quick: { action, icon, label, attrs } }.
+ * One tile. t: { id, role, icon, label, value, sub, sub2 / sub3 (more lines), visual, full, empty, quick: { action, icon, label, attrs } }.
  * The quick action is a sibling button (never inside the open button) so it never opens the tile.
  */
 export function tile(t) {
@@ -57,6 +57,7 @@ export function tile(t) {
         <span class="tile-val" data-tile-val>${t.value}</span>
         <span class="tile-sub" data-tile-sub>${t.sub}</span>
         ${t.sub2 && !t.empty ? `<span class="tile-sub tile-sub2" data-tile-sub2>${t.sub2}</span>` : ''}
+        ${t.sub3 ? `<span class="tile-sub tile-sub3" data-tile-sub3>${t.sub3}</span>` : ''}
       </span>
       ${t.visual && !t.empty ? `<span class="tile-vis">${t.visual}</span>` : ''}
     </button>

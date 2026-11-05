@@ -1,8 +1,9 @@
 // "הגדרות" tab: goals, exercise editor, backup / restore, delete all data, version.
 import { getState, updateSettings, resetAll, upsertCustomFood, deleteCustomFood, uid, save } from '../storage.js';
 import { DAY_NAMES, MIN_DAYS, MAX_DAYS } from '../rotation.js';
+import { weightsList } from '../coach.js';
 import { todayKey } from '../dates.js';
-import { icon, esc, num, toast, confirmDialog, invalid } from '../ui.js';
+import { icon, esc, num, toast, confirmDialog, invalid, parseNum } from '../ui.js';
 import { productSheet } from '../foodSheets.js';
 import { SETTINGS_FIELDS, fieldHTML, validateField } from './wizard.js';
 import { exerciseEditorHTML, handleExerciseAction } from '../exerciseEditor.js';
@@ -31,7 +32,8 @@ export function render(root, ctx) {
       </section>`
     ).join('')}
     ${screenModeCard(st)}
-    ${rotationCard(st)}
+    ${coachCard(st)}
+    ${st.coach?.enabled === false ? rotationCard(st) : ''}
     <section class="card">
       <div class="card-head">${icon('dumbbell', 'head-ic')}<h2>תרגילים</h2></div>
       ${exerciseEditorHTML()}
@@ -100,6 +102,29 @@ function productsCard() {
   </section>`;
 }
 
+/** "מאמן חכם": on (default) / off, and "המשקולות שלי" (weight steps for light days and progression). */
+function coachCard(st) {
+  const on = st.coach?.enabled !== false;
+  const ws = weightsList();
+  return `<section class="card coach-card">
+    <div class="card-head">${icon('sparkle', 'head-ic')}<h2>מאמן חכם</h2></div>
+    <div class="segmented two" role="radiogroup" aria-label="מאמן חכם">
+      <label><input type="radio" name="coachOn" value="on" data-coach-on ${on ? 'checked' : ''}><span>פעיל</span></label>
+      <label><input type="radio" name="coachOn" value="off" data-coach-on ${on ? '' : 'checked'}><span>כבוי</span></label>
+    </div>
+    <p class="muted small">${on ? 'בוחר כל בוקר את אימון היום לפי השינה, האוכל והעומס, ומעלה יעדים בהדרגה.' : 'האימון נקבע לפי תוכנית האימונים הידנית.'}</p>
+    <div class="sub-head"><span>המשקולות שלי</span></div>
+    <div class="weight-chips" data-weights>${ws.map((w) => `<span class="weight-chip"><bdi class="num" dir="ltr">${num(w)}</bdi> ק״ג
+      <button type="button" class="weight-del press" data-action="weight-remove" data-kg="${w}" aria-label="הסרת ${w} ק״ג">${icon('x')}</button></span>`).join('') || '<span class="muted small">עוד לא נוספו משקולות</span>'}</div>
+    <div class="inline-form">
+      <label class="field grow"><span>משקל (ק״ג)</span><input type="number" inputmode="decimal" min="0.5" max="200" step="0.5" data-weight-new placeholder="12" enterkeyhint="done"></label>
+      <button type="button" class="btn secondary press" data-action="weight-add-kg">${icon('plus')}<span>הוספה</span></button>
+    </div>
+  </section>`;
+}
+
+const saveCoach = (patch) => updateSettings({ coach: { enabled: true, weights: [], ...(getState().settings.coach || {}), ...patch } });
+
 /** "תוכנית אימונים": every exercise every day (default), or a rotation of 2–4 workout days. */
 function rotationCard(st) {
   const r = st.rotation || {};
@@ -158,7 +183,11 @@ function floorsTargetText(st) {
 
 function onChange(e, ctx) {
   const t = e.target;
-  if (t.matches('[data-rot-mode]')) {
+  if (t.matches('[data-coach-on]')) {
+    saveCoach({ enabled: t.value === 'on' });
+    toast('נשמר');
+    ctx.rerender();
+  } else if (t.matches('[data-rot-mode]')) {
     saveRotation(ctx, (r) => {
       r.mode = t.value;
       if (t.value === 'rotation') {
@@ -215,6 +244,17 @@ async function onClick(e, ctx, root) {
     return;
   }
   switch (a) {
+    case 'weight-add-kg': {
+      const inp = root.querySelector('[data-weight-new]');
+      const kg = Math.round(parseNum(inp.value) * 2) / 2;
+      if (!(kg > 0 && kg <= 200)) return invalid(inp, 'משקל לא תקין');
+      saveCoach({ weights: [...weightsList(), kg].filter((w, i, a) => a.indexOf(w) === i).sort((x, y) => x - y) });
+      toast('נשמר');
+      return ctx.rerender();
+    }
+    case 'weight-remove':
+      saveCoach({ weights: weightsList().filter((w) => w !== Number(b.dataset.kg)) });
+      return ctx.rerender();
     case 'rot-up':
     case 'rot-down': {
       const i = Number(b.dataset.i), j = a === 'rot-up' ? i - 1 : i + 1;

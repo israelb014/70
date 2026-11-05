@@ -8,8 +8,12 @@ import { exerciseById } from './storage.js';
 export const DAY_NAMES = ['יום א׳', 'יום ב׳', 'יום ג׳', 'יום ד׳'];
 export const MIN_DAYS = 2, MAX_DAYS = 4;
 
-/** The active rotation, or null in "כל התרגילים כל יום" mode. */
+/** Smart coach ("מאמן חכם"): on unless turned off (it replaces the manual rotation while on). */
+export const coachOn = () => !!getState().settings && getState().settings.coach?.enabled !== false;
+
+/** The active rotation, or null in "כל התרגילים כל יום" mode (and while the smart coach is on). */
 export function rotation() {
+  if (coachOn()) return null;
   const r = getState().settings?.rotation;
   return r && r.mode === 'rotation' && Array.isArray(r.days) && r.days.length >= MIN_DAYS && r.startDate ? r : null;
 }

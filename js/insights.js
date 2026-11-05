@@ -8,6 +8,7 @@ import { foodTotals, dayCompletion, exercisesForDay, loggedExtras, computeRecord
 import { sleepMinutes, fmtDuration, walkHistory, BADGES, durText, totalSleepMinutes, hasSleep, napsMinutes } from './progress.js';
 import { int, trim, plural } from './hebrew.js';
 import { typeCounts } from './rotation.js';
+import { summaryPlan } from './coach.js';
 
 /* ---------- helpers ---------- */
 
@@ -238,6 +239,16 @@ export function weekInsights(today = todayKey()) {
   if (tc && tc.total >= 2 * tc.rotation.days.length) {
     const parts = tc.rotation.days.filter((d) => tc.counts.get(d.id) > 0).map((d) => rotationText(d, tc.counts.get(d.id)));
     if (parts.length) out.push(week('rotation', `השבוע: ${parts.join(', ')}`, 'neutral', 50, 'strength'));
+  }
+
+  // Smart coach: full / normal / light / recovery days this week, and exercises that progressed.
+  const plans = cur.map(summaryPlan).filter(Boolean);
+  if (plans.length) {
+    const n = (i) => plans.filter((x) => x.intensity === i).length;
+    const words = { full: ['יום מלא אחד', 'ימים מלאים'], normal: ['יום רגיל אחד', 'ימים רגילים'], light: ['יום קל אחד', 'ימים קלים'], recovery: ['יום התאוששות אחד', 'ימי התאוששות'] };
+    const parts = Object.keys(words).filter((i) => n(i)).map((i) => plural(n(i), ...words[i], int));
+    const up = [...new Set(plans.flatMap((x) => Object.entries(x.progress || {}).filter(([, c]) => c.kind === 'up').map(([id]) => exerciseById(id)?.name).filter(Boolean)))];
+    out.push(week('coach', `השבוע: ${parts.join(', ')}${up.length ? `. התקדמת ב: ${joinHe(up)}` : ''}`, up.length ? 'positive' : 'neutral', 56, 'strength'));
   }
 
   // Breathing → that night's sleep (all history, ≥ 5 nights per group, |diff| ≥ 20 min). Factual, no claims.

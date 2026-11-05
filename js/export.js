@@ -8,6 +8,8 @@ import { int, dec1, dec2, trim, iso, plural, unitAmount } from './hebrew.js';
 import { dayInsights, weekInsights } from './insights.js';
 import { breathMinutes, techniqueById } from './breathing.js';
 import { dayTypeOf, rotationDay, dayLabel, hasWorkout } from './rotation.js';
+import { summaryPlan, planLabel, targetText as coachTargetText } from './coach.js';
+import { exerciseById } from './storage.js';
 
 // Right-to-left mark: makes a line that starts with Latin text ("XP …") lay out right-to-left.
 const RLM = '\u200F';
@@ -104,9 +106,16 @@ export function dailySummary(k) {
   const hasExercise = exLines.length > 0;
   if (day.rest) exLines.push('• יום מנוחה');
   if (extraLines.length) exLines.push('תוספות:', ...extraLines);
-  if (exLines.length) {
+  // Smart coach: the plan first ("תוכנית: יום רגליים · קל — ישנת 4:30 שעות"), then progressions applied.
+  const plan = summaryPlan(k);
+  const planLines = plan ? [`תוכנית: ${planLabel(plan)} — ${plan.reason}`,
+    ...Object.entries(plan.progress || {}).filter(([, c]) => c.kind === 'up').map(([id, c]) => {
+      const ex = exerciseById(id);
+      return ex ? `התקדמות: ${ex.name} ${iso(coachTargetText(ex, c.to))}` : '';
+    }).filter(Boolean)] : [];
+  if (exLines.length || planLines.length) {
     const type = rotationDay(dayTypeOf(k));
-    const sec = [type ? `אימון — ${dayLabel(type)}:` : 'אימון:', ...exLines];
+    const sec = [type ? `אימון — ${dayLabel(type)}:` : 'אימון:', ...planLines, ...exLines];
     const c = dayCompletion(k);
     if (hasExercise && c.total) {
       sec.push(`השלמה: ${completionPct(k)}% (${c.done} מתוך ${c.total === 1 ? 'תרגיל אחד' : `${c.total} תרגילים`})`);
@@ -181,7 +190,8 @@ export function weeklySummary() {
     const day = getDay(k);
     // Rotation: the workout day name on days with a workout (or a chosen type).
     const type = (hasWorkout(k) || day.workoutDay) ? rotationDay(dayTypeOf(k)) : null;
-    lines.push(`יום ${weekdayName(k)} ${shortDate(k)}${type ? ` · ${type.name}` : ''}${day.rest ? ' · יום מנוחה' : ''}`);
+    const plan = summaryPlan(k); // smart coach: the day's plan type and intensity
+    lines.push(`יום ${weekdayName(k)} ${shortDate(k)}${type ? ` · ${type.name}` : ''}${plan ? ` · ${planLabel(plan)}` : ''}${day.rest ? ' · יום מנוחה' : ''}`);
     const body = [];
     if (day.steps) body.push(`צעדים: ${fmt(day.steps)}`);
     if (day.climbs.length) body.push(`מדרגות: ${climbsText(day)}`);

@@ -1,7 +1,8 @@
 // Exercise list editor (add / edit / delete / reorder). Shared by the wizard and settings.
 import { activeExercises, upsertExercise, archiveExercise, moveExercise, exerciseById } from './storage.js';
 import { icon, esc, openSheet, confirmDialog, parseNum, invalid, num } from './ui.js';
-import { rotation, exDays } from './rotation.js';
+import { rotation, exDays, coachOn } from './rotation.js';
+import { GROUPS, groupOf, matchGroup, groupName } from './coach.js';
 
 export const TYPE_LABELS = {
   setsReps: 'סטים × חזרות',
@@ -19,8 +20,17 @@ export function targetText(ex) {
   return t;
 }
 
-/** Rotation: "כל יום" / "יום א׳, יום ג׳"; '' without a rotation. */
+/** Smart coach: "קבוצה" chips (preselected from the library; optional — the coach never needs it). */
+function groupField(ex) {
+  if (!coachOn()) return '';
+  const g = groupOf(ex);
+  return `<fieldset class="field days-field"><legend>אזור בגוף</legend>
+    <div class="day-chips">${GROUPS.map((x) => `<label class="day-chip"><input type="radio" name="group" value="${x.id}" ${x.id === g ? 'checked' : ''}><span>${x.name}</span></label>`).join('')}</div></fieldset>`;
+}
+
+/** Rotation: "כל יום" / "יום א׳, יום ג׳"; '' without a rotation. With the coach: the muscle group. */
 function daysText(ex) {
+  if (coachOn()) return groupName(groupOf(ex)) || 'אזור לא ידוע';
   const r = rotation();
   if (!r) return '';
   const d = exDays(ex);
@@ -112,7 +122,8 @@ async function editExercise(ex) {
       ${field('maxReps', 'יעד חזרות (רשות)', e.type === 'maxReps' ? e.reps : '', 'min="1" data-types="maxReps"')}
       ${field('weight', 'משקל לכל יד, ק״ג (רשות)', e.weight, 'min="0" step="0.5"')}
     </div>
-    ${daysField(e)}`;
+    ${daysField(e)}
+    ${groupField(e)}`;
 
   const sync = (root) => {
     const type = root.querySelector('input[name=type]:checked').value;
@@ -148,6 +159,11 @@ async function editExercise(ex) {
           const type = root.querySelector('input[name=type]:checked').value;
           const weight = parseNum(q('weight').value);
           const out = { id: ex?.id, name, type, weight: weight > 0 ? weight : null, sets: null, reps: null, seconds: null };
+          if (coachOn()) {
+            // Store a group only when it differs from what the library says (missing = the library's).
+            const g = root.querySelector('input[name=group]:checked')?.value || null;
+            out.group = g && g !== matchGroup(name) ? g : null;
+          }
           if (rotation()) {
             const picked = [...root.querySelectorAll('input[name=days]:checked')].map((x) => x.value);
             out.days = !picked.length || picked.includes('all') ? ['all'] : picked;

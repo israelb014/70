@@ -7,7 +7,7 @@ import {
 } from '../ui.js';
 import {
   dayCompletion, currentStreak, exercisesForDay, exerciseProgress, computeRecords, recordIdsOn,
-  longestRideKm, floorsOf, floorsTarget, descentFloorsOf, lastStairsEntry, extrasForDay,
+  longestRideKm, floorsOf, floorsTarget, descentFloorsOf, lastStairsEntry, extrasForDay, dayEx,
 } from '../stats.js';
 import { runTimer } from '../timer.js';
 import {
@@ -25,6 +25,10 @@ import { foodTotals, completionPct } from '../stats.js';
 import { todayKey, lastNDays, addDays, shortDate, longLabel, relativeLabel } from '../dates.js';
 import { breathMinutes, breathGoal } from '../breathing.js';
 import { rotation, dayTypeOf, nextTypeAfter, rotationDay, dayLabel, belongs, hasWorkout } from '../rotation.js';
+import {
+  coachOn, planFor, planLabel, reasonLine, tomorrowPreview, lockPlan, undoChange, setOverride, overrideDays, unknownExercise,
+  GROUPS, INTENSITY, DAY_TYPES, targetText as coachTargetText,
+} from '../coach.js';
 import { weightCard, weightAction } from './trends.js';
 import {
   tilesOn, layoutOf, tile, tileGrid, miniBar, miniRing, miniBars, sparkline, deltaHTML, detailHead, bindSwipeBack, unbindSwipeBack,
@@ -75,6 +79,8 @@ function listHTML(k, day, st, ctx, rec, badge) {
     ${backupBanner()}
     ${photoReminderCard()}
     ${dateNav(k, '')}
+    ${coachBanners(k)}
+    ${planCard(k)}
     ${heroCard(k, day, st)}
     ${insightCard(k)}
     ${stepsCard(day, st, badge)}
@@ -113,7 +119,7 @@ export const HOME_TILES = [
 
 /** Detail pages: the existing cards, unchanged. "חלבון" / "קלוריות" open the "אוכל" tab instead. */
 const DETAILS = {
-  workout: { title: 'אימון', html: (k, day, st, ctx, rec) => rotationBar(k) + heroCard(k, day, st) + exerciseCards(k, day, ctx, rec) + restButton(day) },
+  workout: { title: 'אימון', html: (k, day, st, ctx, rec) => coachBanners(k, false) + planCard(k) + rotationBar(k) + heroCard(k, day, st) + exerciseCards(k, day, ctx, rec) + restButton(day) },
   steps: { title: 'צעדים', html: (k, day, st, ctx, rec, badge) => stepsCard(day, st, badge) },
   fluids: { title: 'נוזלים', html: (k, day, st) => waterCard(day, st) },
   stairs: { title: 'מדרגות', html: (k, day, st, ctx, rec, badge) => stairsCard(day, st, badge) },
@@ -140,6 +146,7 @@ function gridHTML(k, day, st) {
     </div>
     ${backupBanner()}
     ${photoReminderCard()}
+    ${coachBanners(k)}
     ${tileGrid(layoutOf('homeLayout', HOME_TILES).filter((x) => x.visible).map((x) => tile(tiles[x.id])))}
     ${insightCard(k)}
     ${copyDailyButton()}`;
@@ -159,11 +166,15 @@ export function homeTiles(k, day, st) {
   // Without exercises the tile shows "—" but keeps the status line (steps, floors, … still apply).
   // With a workout rotation the label is the day type ("יום א׳ · ידיים וגוף עליון").
   const type = rotationDay(dayTypeOf(k));
+  // Smart coach: label = the plan ("יום עליון · מלא"), sub-line = the reason line; from 18:00 tomorrow's day.
+  const plan = planFor(k);
   t.workout = mk('workout', 'accent', {
     ...(type ? { label: dayLabel(type) } : {}),
+    ...(plan ? { label: planLabel(plan) } : {}),
     value: c.total ? `${num(pct)}<small>%</small>` : EMPTY.value,
-    sub: c.total ? `${num(c.done)} מתוך ${num(c.total)} תרגילים${day.rest ? ' · יום מנוחה' : ''}` : EMPTY.sub,
+    sub: plan ? esc(reasonLine(plan)) : c.total ? `${num(c.done)} מתוך ${num(c.total)} תרגילים${day.rest ? ' · יום מנוחה' : ''}` : EMPTY.sub,
     sub2: esc(statusLine(day, st, c, steps, protein)),
+    sub3: esc(tomorrowPreview(k, nowTime()) || ''),
     visual: c.total ? miniRing('tile-workout', pct / 100, pct >= 100 ? 'var(--success)' : 'var(--accent)', 64, 7) : '',
   });
 
@@ -837,11 +848,89 @@ function exerciseRow(ex, entry, ctx, rec) {
       <span class="ex-status">${exerciseStatus(ex, entry)}</span>
       ${icon('down', 'ex-chev')}
     </button>
+    ${changeLine(ex)}
     <div class="ex-body-wrap" id="exb-${ex.id}"><div class="ex-body">
       ${recBadge ? `<div class="ex-tools">${recBadge}</div>` : ''}
       ${body}
     </div></div>
   </section>`;
+}
+
+/** Smart coach: "התקדמות: 3×14 (היה 3×12)" (or a step back) with a one-tap undo for this session. */
+function changeLine(ex) {
+  const c = ex._change;
+  if (!c) return '';
+  const label = c.kind === 'up' ? 'התקדמות' : 'הקלה ביעד';
+  return `<p class="prog-line ${c.kind}" data-prog="${ex.id}">${icon(c.kind === 'up' ? 'up' : 'down')}
+    <span class="grow">${label}: <bdi dir="ltr">${esc(coachTargetText(ex, c.to))}</bdi> (היה <bdi dir="ltr">${esc(coachTargetText(ex, c.from))}</bdi>)</span>
+    <button type="button" class="link-btn press" data-action="prog-undo" data-ex="${ex.id}">ביטול</button></p>`;
+}
+
+/* ---------- Smart coach cards ---------- */
+
+/** "רשום שינה" (today, not locked, no sleep yet) and the one-time "לאיזה אזור" card (not on detail pages). */
+function coachBanners(k, groupCard = true) {
+  if (!coachOn()) return '';
+  let out = '';
+  const plan = planFor(k);
+  if (plan && !plan.locked && k === todayKey() && !hasSleep(getDay(k))) {
+    out += `<section class="card coach-banner role-sleep" data-sleep-banner>
+      <div class="bb-head">${icon('bed', 'head-ic')}<div class="bb-text"><strong>רשום שינה כדי שאתאים את האימון</strong></div>
+        <button type="button" class="btn secondary press" data-action="coach-sleep">רישום</button></div>
+    </section>`;
+  }
+  const u = groupCard && unknownExercise();
+  if (u) {
+    out += `<section class="card coach-banner group-card" data-group-card="${u.id}">
+      <p class="group-q">לאיזה אזור שייך התרגיל <b>${esc(u.name)}</b>?</p>
+      <div class="group-chips">${GROUPS.map((g) => `<button type="button" class="chip-btn press" data-action="group-set" data-id="${u.id}" data-group="${g.id}">${g.name}</button>`).join('')}
+        <button type="button" class="link-btn press" data-action="group-skip" data-id="${u.id}">דילוג</button></div>
+    </section>`;
+  }
+  return out;
+}
+
+/** Top of the exercises page: day type, intensity chip, reason line, "החלפה"; recovery suggestions. */
+function planCard(k) {
+  const plan = planFor(k);
+  if (!plan) return '';
+  const rec = plan.dayType === 'recovery';
+  const preview = tomorrowPreview(k, nowTime());
+  return `<section class="card plan-card role-accent" data-plan="${plan.dayType}:${plan.intensity}">
+    <div class="plan-head">
+      <div class="grow"><span class="eyebrow">מאמן חכם</span><h2 data-plan-day>${esc(rec ? DAY_TYPES.recovery.name : DAY_TYPES[plan.dayType].name)}</h2></div>
+      ${rec ? '' : `<span class="int-chip int-${plan.intensity}" data-plan-int>יום ${INTENSITY[plan.intensity]}</span>`}
+    </div>
+    <p class="plan-reason" data-plan-reason>${esc(reasonLine(plan))}</p>
+    ${rec ? `<div class="plan-suggest">
+        <button type="button" class="chip-btn press" data-action="coach-go" data-to="stairs">${icon('stairs')}מדרגות</button>
+        <button type="button" class="chip-btn press" data-action="coach-go" data-to="steps">${icon('steps')}צעדים</button>
+        <button type="button" class="chip-btn press" data-action="breath-start">${icon('breath')}נשימה 10 דקות</button>
+      </div>` : ''}
+    <div class="plan-foot">
+      <span class="muted small">${plan.locked ? 'התוכנית ננעלה להיום' : `מוכנות ${num(plan.score)}`}</span>
+      <button type="button" class="link-btn press" data-action="plan-change">החלפה</button>
+    </div>
+    ${preview ? `<p class="plan-tomorrow muted small" data-tomorrow>${esc(preview)}</p>` : ''}
+  </section>`;
+}
+
+/** "החלפה": day type (or recovery) and intensity, saved as this date's override. */
+async function planSheet(k) {
+  const plan = planFor(k);
+  const days = overrideDays();
+  const res = await openSheet({
+    title: 'החלפת האימון',
+    body: `<p class="muted small">סוג היום</p>
+      <div class="seg-chips" role="radiogroup">${days.map((d) => `<label class="day-chip"><input type="radio" name="pday" value="${d.id}" ${d.id === plan.dayType ? 'checked' : ''}><span>${esc(d.name)}</span></label>`).join('')}</div>
+      <p class="muted small">עצימות</p>
+      <div class="seg-chips" role="radiogroup">${['full', 'normal', 'light'].map((i) => `<label class="day-chip"><input type="radio" name="pint" value="${i}" ${i === plan.intensity || (plan.intensity === 'recovery' && i === 'normal') ? 'checked' : ''}><span>יום ${INTENSITY[i]}</span></label>`).join('')}</div>`,
+    actions: [
+      { label: 'ביטול', value: null, kind: 'ghost' },
+      { label: 'שמירה', kind: 'primary', onClick: (w) => ({ dayType: w.querySelector('[name=pday]:checked').value, intensity: w.querySelector('[name=pint]:checked').value }) },
+    ],
+  });
+  return res;
 }
 
 /** Accordion: open one row (closing others) or close it — in place, so the height animates. */
@@ -920,6 +1009,7 @@ function maxRepsBody(ex, entry) {
 
 /** Runs a mutation and, if it completes the exercise, triggers vibration + check draw-in. */
 function trackCompletion(ctx, ex, fn) {
+  lockPlan(ctx.date); // smart coach: the first logged set locks today's plan
   pinDayType(ctx.date, ex);
   const before = exerciseProgress(ex, getDay(ctx.date).exercises[ex.id]);
   fn();
@@ -939,13 +1029,22 @@ function pinDayType(k, ex) {
   if (type && !belongs(ex, type) && !getState().days[k]?.workoutDay) updateDay(k, (d) => (d.workoutDay = type));
 }
 
+function updateExerciseGroup(id, group) {
+  const ex = exerciseById(id);
+  if (ex) {
+    ex.group = group;
+    save();
+  }
+}
+
 /** Remember reps and weight per set number, so the next session prefills set by set. */
-function rememberSets(ex, sets) {
+function rememberSets(day, sets) {
+  const ex = day._base || day; // coach copies carry today's targets; memory lives on the exercise
   const all = Array.from({ length: Math.max(ex.sets || 1, sets.length) }, (_, i) => sets[i]);
   const reps = all.map((s, i) => (s?.done ? s.reps : ex.last?.reps?.[i] ?? ex.reps));
   const weights = all.map((s, i) => (s?.done ? s.weight ?? null : prefillWeight(ex, i)));
   const lastDone = [...sets].reverse().find((s) => s?.done);
-  ex.last = { ...(ex.last || {}), reps, weights, weight: lastDone ? lastDone.weight ?? null : prefillWeight(ex) };
+  ex.last = { ...(ex.last || {}), reps, weights, weight: lastDone ? lastDone.weight ?? null : prefillWeight(day) };
   save();
 }
 
@@ -972,6 +1071,34 @@ async function onClick(e, ctx) {
       ctx.layoutFor = b.dataset.layout;
       ctx.layoutDraft = null;
       return ctx.goTab('layout');
+    case 'coach-sleep':
+      if (tilesOn()) return ctx.openDetail('sleep');
+      root().querySelector('.card.role-sleep')?.scrollIntoView({ block: 'center' });
+      return;
+    case 'coach-go':
+      if (tilesOn()) return ctx.openDetail(b.dataset.to);
+      return;
+    case 'group-set':
+      updateExerciseGroup(b.dataset.id, b.dataset.group);
+      vibrate(HAPTIC.item);
+      toast('נשמר');
+      return rerender();
+    case 'group-skip':
+      updateMeta({ groupSkip: [...(getState().meta.groupSkip || []), b.dataset.id] });
+      return rerender();
+    case 'plan-change': {
+      const res = await planSheet(k);
+      if (!res) return;
+      setOverride(k, res);
+      vibrate(HAPTIC.item);
+      toast('התוכנית עודכנה');
+      return rerender();
+    }
+    case 'prog-undo':
+      undoChange(k, b.dataset.ex);
+      vibrate(HAPTIC.item);
+      toast('ההתקדמות בוטלה לאימון הזה');
+      return rerender();
     case 'rot-day': {
       const id = b.dataset.id;
       if (id === dayTypeOf(k)) return;
@@ -1053,13 +1180,13 @@ async function onClick(e, ctx) {
         delete b.dataset.longPressed;
         return;
       }
-      const ex = exerciseById(b.dataset.ex);
+      const ex = dayEx(b.dataset.ex, k);
       if (ex) toggleSet(ctx, ex, Number(b.dataset.i));
       return rerender();
     }
     case 'sets-edit': {
       // The edit control opens the next set still to do (or the last set when all are done).
-      const ex = exerciseById(b.dataset.ex);
+      const ex = dayEx(b.dataset.ex, k);
       if (!ex) return;
       const sets = getDay(k).exercises[ex.id]?.sets || [];
       const n = Math.max(ex.sets || 1, sets.length);
@@ -1069,7 +1196,7 @@ async function onClick(e, ctx) {
       return;
     }
     case 'timer': {
-      const ex = exerciseById(b.dataset.ex);
+      const ex = dayEx(b.dataset.ex, k);
       if (!ex) return;
       const sec = await runTimer(ex.seconds || 60, ex.name);
       if (sec > 0) {
@@ -1080,14 +1207,15 @@ async function onClick(e, ctx) {
             entry.weight = ex.weight ?? null;
           })
         );
-        ex.last = { ...(ex.last || {}), seconds: sec };
+        const base = ex._base || ex;
+        base.last = { ...(base.last || {}), seconds: sec };
         save();
         toast(`נשמרו ${sec} שניות`);
       }
       return rerender();
     }
     case 'manual-save': {
-      const ex = exerciseById(b.dataset.ex);
+      const ex = dayEx(b.dataset.ex, k);
       const input = b.closest('.card').querySelector(`[data-manual="${ex?.id}"]`);
       if (ex && input) await saveManual(ctx, ex, input);
       return;
@@ -1232,7 +1360,7 @@ function onChange(e, ctx) {
 /** Long-press on a set chip opens the per-set sheet (reps + weight). */
 export function onLong(el, ctx) {
   if (el.dataset.long !== 'set') return;
-  const ex = exerciseById(el.dataset.ex);
+  const ex = dayEx(el.dataset.ex, ctx.date);
   if (ex) editSet(ctx, ex, Number(el.dataset.i));
 }
 
@@ -1334,6 +1462,7 @@ async function editSet(ctx, ex, i) {
  * weight) or one rep count (≠ target reps).
  */
 async function offerTargetUpdate(ctx, ex) {
+  if (coachOn()) return; // the smart coach progresses targets itself
   const done = (getDay(ctx.date).exercises[ex.id]?.sets || []).filter((x) => x?.done);
   // Judge the day only once the exercise's sets are all done (one heavy first set is not a new target).
   if (!done.length || done.length < (ex.sets || 1)) return;
@@ -1372,12 +1501,14 @@ async function saveManual(ctx, ex, input) {
       entry.weight = ex.weight ?? null;
     })
   );
+  const base = ex._base || ex;
   if (val) {
-    ex.last = ex.type === 'timed' ? { ...(ex.last || {}), seconds: val } : { ...(ex.last || {}), reps: [val] };
+    base.last = ex.type === 'timed' ? { ...(base.last || {}), seconds: val } : { ...(base.last || {}), reps: [val] };
     save();
   }
   toast('נשמר');
   ctx.rerender();
+  if (coachOn()) return; // the smart coach progresses targets itself
 
   // Offer to raise the target after beating it.
   const target = ex.type === 'timed' ? ex.seconds : ex.reps;

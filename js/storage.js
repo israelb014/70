@@ -64,6 +64,8 @@ export function normalize(d) {
     }
     // "Update target" prompt shown: { exerciseId: dayKey } (at most once per exercise per day).
     if (isObj(d.meta.targetPrompts)) s.meta.targetPrompts = { ...d.meta.targetPrompts };
+    // Smart coach: exercises whose unknown group the user skipped ("לאיזה אזור").
+    if (Array.isArray(d.meta.groupSkip)) s.meta.groupSkip = d.meta.groupSkip.filter((x) => typeof x === 'string');
     if (d.meta.photoPersisted === true) s.meta.photoPersisted = true; // navigator.storage.persist() already asked
     // Last breathing technique + duration (setup prefill).
     if (isObj(d.meta.breathLast)) s.meta.breathLast = { technique: String(d.meta.breathLast.technique || ''), minutes: Number(d.meta.breathLast.minutes) || 5 };
@@ -111,6 +113,8 @@ export function normalize(d) {
           : [],
         // Rotation: manual workout day type for this date (optional, missing = none).
         ...(typeof day.workoutDay === 'string' && day.workoutDay ? { workoutDay: day.workoutDay } : {}),
+        // Smart coach: the day's plan (stored once locked, or holding an override / undo).
+        ...(isObj(day.plan) ? { plan: day.plan } : {}),
       };
     }
   }
