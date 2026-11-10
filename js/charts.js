@@ -23,7 +23,7 @@ export function arcPath(cx, cy, r, frac, stroke) {
 export function arcFill({ cx, r, stroke, frac, from = 0, color, cls = 'ring-fill', delay = 0, dur, extra = '' }) {
   const f = clamp01(frac);
   if (from !== f) scheduleArcs();
-  return `<path class="${cls}" d="${arcPath(cx, cx, r, f, stroke)}" fill="none" stroke="${color}" stroke-width="${stroke}"
+  return `<path class="${cls}" d="${arcPath(cx, cx, r, f, stroke)}" fill="none" stroke="${color}" stroke-width="${stroke}" style="--c:${color}"
     stroke-linecap="round" data-cx="${cx}" data-r="${r}" data-stroke="${stroke}" data-frac="${f}"
     ${from !== f ? `data-from="${clamp01(from)}" data-delay="${delay}"${dur ? ` data-dur="${dur}"` : ''}` : ''} ${extra}/>`;
 }

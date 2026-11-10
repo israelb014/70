@@ -54,6 +54,8 @@ const APP_FILES = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/icon-maskable-512.png',
+  './icons/apple-touch-icon.png',
+  './icons/favicon.ico',
   './icons/shortcut-water.png',
   './icons/shortcut-food.png',
   './icons/shortcut-scan.png',

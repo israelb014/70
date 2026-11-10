@@ -143,8 +143,17 @@ function render() {
   main.dataset.tab = ctx.tab;
   main.dataset.detail = (!SCREENS[ctx.tab] && ctx.detail[ctx.tab]) || '';
   (SCREENS[ctx.tab] || TABS.find((t) => t.id === ctx.tab).view).render(main, ctx);
+  setGlow();
   if (!main.classList.contains('settled')) countUp(main);
   checkProgress();
+}
+
+// The glow at the top of the screen takes the color of the metric shown (orange by default).
+const GLOW_ROLE = { steps: 'steps', protein: 'protein', fluids: 'water', sleep: 'sleep', breath: 'breath', kcal: 'kcal', weight: 'weight' };
+const glow = document.querySelector('.glow');
+function setGlow() {
+  const d = !SCREENS[ctx.tab] && ctx.detail[ctx.tab];
+  glow?.style.setProperty('--glow-c', `var(--${GLOW_ROLE[d] || 'accent'})`);
 }
 
 /**

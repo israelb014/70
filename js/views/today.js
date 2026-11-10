@@ -132,24 +132,62 @@ const FOOD_TILES = new Set(['protein', 'kcal']);
 
 function gridHTML(k, day, st) {
   const tiles = homeTiles(k, day, st);
-  const L = levelInfo();
-  const streak = currentStreak();
   return `
-    ${dateNav(k, '')}
-    <div class="dash-bar">
-      ${editButton('home')}
-      <div class="dash-chips">
-        <button type="button" class="dash-chip press" data-action="achievements" aria-label="רמה ${L.level} · הישגים">
-          ${miniRing('level-dash', L.frac, 'var(--accent)', 24, 3.5)}<span>רמה ${num(L.level)}</span></button>
-        <span class="dash-chip streak-chip ${streak ? 'on' : ''}" aria-label="${streak} ימי רצף">${icon('flame')}<span>${num(streak)}</span></span>
-      </div>
-    </div>
+    ${todayHeader(k)}
+    ${ringsSection(k, day, st)}
     ${backupBanner()}
     ${photoReminderCard()}
     ${coachBanners(k)}
     ${tileGrid(layoutOf('homeLayout', HOME_TILES).filter((x) => x.visible).map((x) => tile(tiles[x.id])))}
     ${insightCard(k)}
     ${copyDailyButton()}`;
+}
+
+/** "היום" header: big title + date (with day arrows) on the right, the level ring on the left. */
+function todayHeader(k) {
+  const rel = relativeLabel(k);
+  const L = levelInfo();
+  return `<header class="today-head date-nav">
+    <div class="th-main">
+      <h1>${esc(rel || longLabel(k))}</h1>
+      <div class="th-date">
+        <button type="button" class="th-arrow press" data-action="date-prev" aria-label="היום הקודם">${icon('chevR')}</button>
+        ${rel ? `<span>${esc(longLabel(k))}</span>` : '<button type="button" class="link-btn" data-action="date-today">חזרה להיום</button>'}
+        <button type="button" class="th-arrow press" data-action="date-next" aria-label="היום הבא" ${k >= todayKey() ? 'disabled' : ''}>${icon('chevL')}</button>
+      </div>
+    </div>
+    <button type="button" class="dash-chip level-ring press" data-action="achievements" aria-label="רמה ${L.level} · הישגים">
+      ${miniRing('level-dash', L.frac, 'var(--accent)', 60, 4, `<b>${num(L.level)}</b>`)}</button>
+  </header>`;
+}
+
+/** The three big rings (workout, steps, protein) with a legend, the streak chip and "עריכה". */
+function ringsSection(k, day, st) {
+  const pct = completionPct(k);
+  const steps = day.steps || 0;
+  const protein = Math.round(foodTotals(k).protein);
+  const streak = currentStreak();
+  return `<section class="dash-rings" aria-label="סיכום היום">
+    ${concentricRings({
+      size: 280, stroke: 16, gap: 13,
+      rings: [
+        { id: 'dash-ex', frac: pct / 100, color: 'var(--accent)' },
+        { id: 'dash-steps', frac: st.stepsTarget ? steps / st.stepsTarget : 0, color: 'var(--steps)' },
+        { id: 'dash-protein', frac: st.proteinTarget ? protein / st.proteinTarget : 0, color: 'var(--protein)' },
+      ],
+    })}
+    <div class="rings-foot">
+      <div class="dash-tools">
+        <span class="dash-chip streak-chip ${streak ? 'on' : ''}" aria-label="${streak} ימי רצף">${icon('flame')}<span>${num(streak)}</span></span>
+        ${editButton('home')}
+      </div>
+      <ul class="rings-legend">
+        <li style="--c:var(--accent)"><i></i><span>אימון</span><b><bdi class="num" dir="ltr">${pct}%</bdi></b></li>
+        <li style="--c:var(--steps)"><i></i><span>צעדים</span><b>${frac(fmt(steps), fmt(st.stepsTarget || 0))}</b></li>
+        <li style="--c:var(--protein)"><i></i><span>חלבון</span><b>${frac(protein, st.proteinTarget || 0)}<small> ג׳</small></b></li>
+      </ul>
+    </div>
+  </section>`;
 }
 
 /** Tile content for day k: one main number each, from the same helpers as the cards. */
@@ -171,17 +209,21 @@ export function homeTiles(k, day, st) {
   t.workout = mk('workout', 'accent', {
     ...(type ? { label: dayLabel(type) } : {}),
     ...(plan ? { label: planLabel(plan) } : {}),
-    value: c.total ? `${num(pct)}<small>%</small>` : EMPTY.value,
+    value: c.total ? `<bdi class="num" dir="ltr">${pct}<small>%</small></bdi>` : EMPTY.value,
     sub: plan ? esc(reasonLine(plan)) : c.total ? `${num(c.done)} מתוך ${num(c.total)} תרגילים${day.rest ? ' · יום מנוחה' : ''}` : EMPTY.sub,
     sub2: esc(statusLine(day, st, c, steps, protein)),
     sub3: esc(tomorrowPreview(k, nowTime()) || ''),
-    visual: c.total ? miniRing('tile-workout', pct / 100, pct >= 100 ? 'var(--success)' : 'var(--accent)', 64, 7) : '',
+    hero: true, // rendered as the "אימון היום" card
   });
+
+  // Every other tile: the big number with a 7-day line beside it, in the tile's color.
+  const week = lastNDays(7, k);
+  const line = (fn, role) => sparkline(week.map((d) => Math.round(fn(getDay(d), d) * 100) / 100), `var(--${role})`, false);
 
   const sTarget = st.stepsTarget || 0;
   t.steps = mk('steps', 'steps', {
     ...(steps ? { value: num(steps), sub: `מתוך ${num(sTarget)}` } : EMPTY),
-    visual: miniBar(sTarget ? steps / sTarget : 0, sTarget && steps >= sTarget ? 'var(--success)' : 'var(--steps)'),
+    visual: line((d) => d.steps || 0, 'steps'), inline: true,
     quick: { action: 'steps-add', icon: 'plus', label: 'הוספת 1,000 צעדים', attrs: 'data-n="1000"' },
   });
 
@@ -189,15 +231,15 @@ export function homeTiles(k, day, st) {
   const hasFood = (day.food || []).length > 0;
   t.protein = mk('protein', 'protein', {
     ...(hasFood ? { value: `${num(protein)}<small> ג׳</small>`, sub: `מתוך ${num(pTarget)}` } : EMPTY),
-    visual: miniBar(pTarget ? protein / pTarget : 0, pTarget && protein >= pTarget ? 'var(--success)' : 'var(--protein)'),
-    quick: { action: 'tile-food', icon: 'search', label: 'חיפוש מזון' },
+    visual: line((d, key) => foodTotals(key).protein, 'protein'), inline: true,
+    quick: { action: 'tile-food', icon: 'plus', label: 'חיפוש מזון' },
   });
 
   const wTarget = st.waterTarget || 2500;
   const ml = fluidsMl(day);
   t.fluids = mk('fluids', 'water', {
-    ...(ml ? { value: `${num(liters(ml))}<small> ל׳</small>`, sub: `מתוך ${num(wTarget / 1000, 2)}` } : EMPTY),
-    visual: miniBar(ml / wTarget, ml >= wTarget ? 'var(--success)' : 'var(--water)'),
+    ...(ml ? { value: `${num(trim(ml / 1000, 2))}<small> ליטר</small>`, sub: `מתוך ${num(wTarget / 1000, 2)}` } : EMPTY),
+    visual: line((d) => fluidsMl(d) / 1000, 'water'), inline: true,
     quick: { action: 'water-quick', icon: 'plus', label: 'הוספת 250 מ״ל מים' },
   });
 
@@ -208,21 +250,21 @@ export function homeTiles(k, day, st) {
       value: frac(fmt(floors), fmt(fTarget)),
       sub: `${ups === 1 ? 'עלייה אחת' : `${num(ups)} עליות`}${downs ? ` · ${downs === 1 ? 'ירידה אחת' : `${num(downs)} ירידות`}` : ''}`,
     } : EMPTY),
-    visual: miniBar(fTarget ? floors / fTarget : 0, fTarget && floors >= fTarget ? 'var(--success)' : 'var(--accent)'),
+    visual: line((d) => floorsOf(d), 'accent'), inline: true,
     quick: { action: 'climb-quick', icon: 'plus', label: 'הוספת עלייה רגילה' },
   });
 
   const slTarget = st.sleepTarget || 8;
   const sl = totalSleepMinutes(day);
   t.sleep = mk('sleep', 'sleep', {
-    ...(hasSleep(day) ? { value: num(fmtDuration(sl)), sub: targetHTML(slTarget) } : EMPTY),
-    visual: miniBar(sl / (slTarget * 60), sl >= slTarget * 60 ? 'var(--success)' : 'var(--sleep)'),
+    ...(hasSleep(day) ? { value: hoursHTML(sl), sub: targetHTML(slTarget) } : EMPTY),
+    visual: line((d) => totalSleepMinutes(d) / 60, 'sleep'), inline: true,
   });
 
   const bGoal = breathGoal(), bMin = breathMinutes(day);
   t.breath = mk('breath', 'breath', {
     ...(bMin ? { value: `${num(bMin)}<small> דק׳</small>`, sub: `יעד ${num(bGoal)}` } : EMPTY),
-    visual: miniBar(bMin / bGoal, 'var(--breath)'),
+    visual: line((d) => breathMinutes(d), 'breath'), inline: true,
     quick: { action: 'breath-start', icon: 'play', label: 'תרגול נשימה' },
   });
 
@@ -231,27 +273,26 @@ export function homeTiles(k, day, st) {
   const longest = longestRideKm();
   t.rides = mk('rides', 'accent', {
     ...(day.rides.length ? { value: `${num(km)}<small> ק״מ</small>`, sub: `שיא ${num(longest)} · יעד ${num(goal)}` } : EMPTY),
-    visual: miniBar(goal ? longest / goal : 0, goal && longest >= goal ? 'var(--success)' : 'var(--accent)'),
+    visual: line((d) => d.rides.reduce((a, r) => a + (Number(r.km) || 0), 0), 'accent'), inline: true,
     quick: { action: 'ride-new', icon: 'plus', label: 'רכיבה חדשה' },
   });
 
-  const week = lastNDays(7, k);
-  t.kcal = mk('kcal', 'accent', {
+  t.kcal = mk('kcal', 'kcal', {
     ...(hasFood ? { value: num(Math.round(totals.kcal)), sub: k === todayKey() ? 'היום' : `קק״ל · ${num(shortDate(k))}` } : EMPTY),
-    visual: miniBars(week.map((d) => Math.round(foodTotals(d).kcal)), { color: 'var(--accent)' }),
-    quick: { action: 'tile-food', icon: 'search', label: 'חיפוש מזון' },
+    visual: line((d, key) => foodTotals(key).kcal, 'kcal'), inline: true,
+    quick: { action: 'tile-food', icon: 'plus', label: 'חיפוש מזון' },
   });
 
   // Weight: the latest weigh-in up to day k, compared with the latest one up to a week earlier.
   const upTo = (key) => getState().weights.filter((w) => w.date <= key);
   const ws = upTo(k);
   const cur = ws.at(-1)?.kg, weekAgo = upTo(addDays(k, -7)).at(-1)?.kg;
-  t.weight = mk('weight', 'accent', {
+  t.weight = mk('weight', 'weight', {
     ...(ws.length ? {
       value: `${num(cur)}<small> ק״ג</small>`,
       sub: deltaHTML(cur, weekAgo, { dir: -1, mode: 'abs', unit: 'ק״ג', none: 'אין שקילה מלפני שבוע' }),
     } : EMPTY),
-    visual: sparkline(ws.slice(-8).map((w) => w.kg), 'var(--accent)'),
+    visual: sparkline(ws.slice(-8).map((w) => w.kg), 'var(--weight)', false), inline: true,
     quick: { action: 'weight-add', icon: 'plus', label: 'הוספת שקילה' },
   });
   return t;
@@ -313,6 +354,12 @@ function levelChip() {
 
 /** durText with the number isolated LTR ("1:20" must not flip inside RTL text). */
 const durHTML = (m) => esc(durText(m)).replace(/[\d:]+/, (d) => `<bdi class="num" dir="ltr">${d}</bdi>`);
+
+/** "7 שע׳ 15 ד׳" (numbers isolated; minutes left out on the hour). */
+const hoursHTML = (m) => {
+  const h = Math.floor(Math.round(m) / 60), mm = Math.round(m) % 60;
+  return `${num(h)}<small> שע׳</small>${mm ? ` ${num(mm)}<small> ד׳</small>` : ''}`;
+};
 
 /** "יעד 8 שעות" / "יעד שעה אחת" (number isolated). The big number already shows the night duration. */
 const targetHTML = (h) => `יעד ${esc(plural(h, 'שעה אחת', 'שעות')).replace(/[\d.,]+/, (d) => `<bdi class="num" dir="ltr">${d}</bdi>`)}`;
@@ -539,7 +586,7 @@ function heroCard(k, day, st) {
           { id: 'hero-steps', frac: st.stepsTarget ? steps / st.stepsTarget : 0, color: 'var(--steps)' },
           { id: 'hero-protein', frac: st.proteinTarget ? protein / st.proteinTarget : 0, color: 'var(--protein)' },
         ],
-        inner: `<div class="ring-big"><bdi class="num" dir="ltr" data-count="${pct}">${pct}</bdi><small>%</small></div>
+        inner: `<div class="ring-big" dir="ltr"><bdi class="num" dir="ltr" data-count="${pct}">${pct}</bdi><small>%</small></div>
           <div class="caption">${c.total ? 'אימון' : 'אין תרגילים'}</div>`,
       })}
       <div class="hero-side">

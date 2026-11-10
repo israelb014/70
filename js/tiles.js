@@ -45,23 +45,46 @@ export const defaultLayout = (defs) => defs.map((d) => ({ id: d.id, visible: tru
 export const EMPTY = { value: '—', sub: 'עוד אין נתונים', empty: true };
 
 /**
- * One tile. t: { id, role, icon, label, value, sub, sub2 / sub3 (more lines), visual, full, empty, quick: { action, icon, label, attrs } }.
+ * One tile. t: { id, role, icon, label, value, sub, sub2 / sub3 (more lines), visual, full, empty, inline, hero,
+ * quick: { action, icon, label, attrs } }. Tinted in its color role: icon + name on top, the quick action in the
+ * opposite corner; below, the big number with its visual beside it (`inline`) or underneath.
  * The quick action is a sibling button (never inside the open button) so it never opens the tile.
  */
 export function tile(t) {
+  if (t.hero) return heroTile(t);
   const q = t.quick;
-  return `<div class="tile role-${t.role}${t.full ? ' full' : ''}${t.empty ? ' is-empty' : ''}${q ? ' has-quick' : ''}" data-tile="${t.id}">
+  const vis = t.visual && !t.empty ? `<span class="tile-vis">${t.visual}</span>` : '';
+  return `<div class="tile role-${t.role}${t.full ? ' full' : ''}${t.inline ? ' inline' : ''}${t.empty ? ' is-empty' : ''}${q ? ' has-quick' : ''}" data-tile="${t.id}">
     <button type="button" class="tile-open press" data-action="tile-open" data-tile-id="${t.id}" aria-label="${esc(t.label)} · פרטים">
-      <span class="tile-text">
-        <span class="tile-head">${icon(t.icon, 'tile-ic')}<span class="tile-lbl">${esc(t.label)}</span></span>
-        <span class="tile-val" data-tile-val>${t.value}</span>
-        <span class="tile-sub" data-tile-sub>${t.sub}</span>
-        ${t.sub2 && !t.empty ? `<span class="tile-sub tile-sub2" data-tile-sub2>${t.sub2}</span>` : ''}
-        ${t.sub3 ? `<span class="tile-sub tile-sub3" data-tile-sub3>${t.sub3}</span>` : ''}
+      <span class="tile-head">${icon(t.icon, 'tile-ic')}<span class="tile-lbl">${esc(t.label)}</span></span>
+      <span class="tile-body">
+        ${t.inline ? vis : ''}
+        <span class="tile-text">
+          <span class="tile-val" data-tile-val>${t.value}</span>
+          <span class="tile-sub" data-tile-sub>${t.sub}</span>
+          ${t.sub2 && !t.empty ? `<span class="tile-sub tile-sub2" data-tile-sub2>${t.sub2}</span>` : ''}
+          ${t.sub3 ? `<span class="tile-sub tile-sub3" data-tile-sub3>${t.sub3}</span>` : ''}
+        </span>
+        ${t.inline ? '' : vis}
       </span>
-      ${t.visual && !t.empty ? `<span class="tile-vis">${t.visual}</span>` : ''}
     </button>
     ${q ? `<button type="button" class="tile-quick press" data-action="${q.action}" ${q.attrs || ''} aria-label="${esc(q.label)}">${icon(q.icon)}</button>` : ''}
+  </div>`;
+}
+
+/** "אימון היום": a raised card — eyebrow, the workout's name, its lines, and a round "התחל" button. */
+function heroTile(t) {
+  return `<div class="tile full tile-hero role-${t.role}${t.empty ? ' is-empty' : ''}" data-tile="${t.id}">
+    <button type="button" class="tile-open press" data-action="tile-open" data-tile-id="${t.id}" aria-label="${esc(t.label)} · פרטים">
+      <span class="tile-text">
+        <span class="hero-eyebrow">אימון היום<span class="hero-pct"> · <span class="tile-val" data-tile-val>${t.value}</span></span></span>
+        <span class="tile-lbl">${esc(t.label)}</span>
+        <span class="tile-sub" data-tile-sub>${t.sub}</span>
+        ${t.sub2 ? `<span class="tile-sub tile-sub2" data-tile-sub2>${t.sub2}</span>` : ''}
+        ${t.sub3 ? `<span class="tile-sub tile-sub3" data-tile-sub3>${t.sub3}</span>` : ''}
+      </span>
+    </button>
+    <button type="button" class="hero-start press" data-action="tile-open" data-tile-id="${t.id}" aria-label="התחלת האימון">התחל</button>
   </div>`;
 }
 
@@ -116,16 +139,16 @@ export function miniBars(values, { target = 0, color, stack = null, stackColor =
 }
 
 /** Sparkline through the values (oldest → newest; RTL: newest on the left). */
-export function sparkline(values, color) {
+export function sparkline(values, color, dot = true) {
   const W = 100, H = 30, pad = 3;
   if (values.length < 2) return '';
   const lo = Math.min(...values), hi = Math.max(...values), span = hi - lo || 1;
   const pts = values.map((v, i) => [W - pad - (i * (W - pad * 2)) / (values.length - 1), pad + (1 - (v - lo) / span) * (H - pad * 2)]);
   const d = pts.map((p) => `${p[0].toFixed(2)},${p[1].toFixed(2)}`).join(' ');
   const last = pts.at(-1);
-  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true" data-points="${values.join(',')}">
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true" data-points="${values.join(',')}" style="--c:${color}">
     <polyline points="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
-    <circle cx="${last[0].toFixed(2)}" cy="${last[1].toFixed(2)}" r="2.6" fill="${color}"/></svg>`;
+    ${dot ? `<circle cx="${last[0].toFixed(2)}" cy="${last[1].toFixed(2)}" r="2.6" fill="${color}"/>` : ''}</svg>`;
 }
 
 /**
