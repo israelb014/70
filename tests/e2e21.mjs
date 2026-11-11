@@ -88,19 +88,19 @@ await step('update banner: a newer GitHub Release → "גרסה חדשה זמי�
     beforeGoto: async (c) => {
       await c.unroute('https://api.github.com/**');
       await c.route('https://api.github.com/repos/israelb014/70/releases/latest', (r) => { hits++; r.fulfill({ status: 200, contentType: 'application/json',
-        body: JSON.stringify({ tag_name: 'v3.0.1', html_url: 'https://github.com/israelb014/70/releases/tag/v3.0.1', assets: [{ name: '70-v3.0.1.apk', browser_download_url: 'https://github.com/israelb014/70/releases/download/v3.0.1/70-v3.0.1.apk' }] }) }); });
+        body: JSON.stringify({ tag_name: 'v99.0.0', html_url: 'https://github.com/israelb014/70/releases/tag/v99.0.0', assets: [{ name: '70-v99.0.0.apk', browser_download_url: 'https://github.com/israelb014/70/releases/download/v99.0.0/70-v99.0.0.apk' }] }) }); });
       await c.route('https://github.com/**', (r) => r.fulfill({ status: 200, body: 'apk' }));
     },
   });
   await p.waitForTimeout(400);
   eq(hits, 1, 'one check');
   eq((await p.textContent('[data-update-banner] strong')).trim(), 'גרסה חדשה זמינה', 'banner');
-  if (!(await p.textContent('[data-update-banner]')).includes('3.0.1')) throw new Error('version');
+  if (!(await p.textContent('[data-update-banner]')).includes('99.0.0')) throw new Error('version');
   // Resume within 6 h: no second request
   await p.evaluate(() => window.__cap.fire('App', 'appStateChange', { isActive: true })); await p.waitForTimeout(300);
   eq(hits, 1, 'throttled');
   const [req] = await Promise.all([p.waitForRequest((r) => r.url().endsWith('.apk')), p.click('[data-action=app-update]')]);
-  eq(req.url(), 'https://github.com/israelb014/70/releases/download/v3.0.1/70-v3.0.1.apk', 'apk url');
+  eq(req.url(), 'https://github.com/israelb014/70/releases/download/v99.0.0/70-v99.0.0.apk', 'apk url');
   await ctx.close();
   // Same version → no banner; offline → silent
   const same = await open();

@@ -1393,9 +1393,7 @@ button.dash-chip { cursor: pointer; }
 .rem-time { flex: none; width: 104px; min-height: 44px; padding: 0 var(--s-2); border: 0; border-radius: var(--r-chip); background: var(--sunken); color: var(--text); font: var(--t-body-strong); }
 .src-hc { display: inline-flex; vertical-align: -2px; color: var(--success); }
 .src-hc .ic { width: 13px; height: 13px; }
-.app-banner .bb-actions { flex-wrap: wrap; }
-.app-banner .bb-actions .btn { flex: 1 1 40%; }
-.app-banner .bb-actions .btn.primary { flex-basis: 100%; }
+.app-banner .bb-actions .btn { flex: 1 1 auto; padding: 0 var(--s-2); text-decoration: none; }
 .app-banner .bb-sub span { white-space: normal; }
 .wiz-restore-row { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--s-2) var(--s-4); }
 

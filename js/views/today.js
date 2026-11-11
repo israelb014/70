@@ -659,9 +659,9 @@ function appBanners() {
       <div class="bb-sub"><span>כדי לעבור: גיבוי, גיבוי תמונות, ואז שחזור באפליקציה</span>
         <button type="button" class="bb-later press" data-action="app-banner-close">סגירה</button></div></div></div>
     <div class="bb-actions">
-      <button type="button" class="btn secondary press" data-action="backup-now">${icon('download')}<span>גיבוי</span></button>
-      <button type="button" class="btn secondary press" data-action="app-photos-backup">${icon('camera')}<span>גיבוי תמונות</span></button>
-      <a class="btn primary press" href="${RELEASES_PAGE}" target="_blank" rel="noopener">${icon('download')}<span>הורדת האפליקציה</span></a>
+      <button type="button" class="btn secondary press" data-action="backup-now"><span>גיבוי</span></button>
+      <button type="button" class="btn secondary press" data-action="app-photos-backup"><span>גיבוי תמונות</span></button>
+      <a class="btn primary press" href="${RELEASES_PAGE}" target="_blank" rel="noopener">${icon('download')}<span>להורדה</span></a>
     </div>
   </section>`;
 }
