@@ -47,7 +47,7 @@ export function normalizeHe(s) {
 // { key, name, kcal100, protein100, units: [{l, g}], source: 'db' | 'custom', barcode? }
 
 export function fromDb(f) {
-  return { key: `db:${f.n}`, name: f.n, kcal100: f.k, protein100: f.p, units: f.u || [], source: 'db' };
+  return { key: `db:${f.n}`, name: f.n, kcal100: f.k, protein100: f.p, units: f.u || [], source: 'db', ...(f.d ? { drink: true } : {}) };
 }
 
 export function fromCustom(c) {

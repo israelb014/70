@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">70</string>
+    <string name="title_activity_main">70</string>
+    <string name="package_name">com.ibfix.seventy</string>
+    <string name="custom_url_scheme">com.ibfix.seventy</string>
+    <string name="shortcut_water">הוספת מים</string>
+    <string name="shortcut_food">הוספת אוכל</string>
+    <string name="shortcut_scan">סריקת ברקוד</string>
+    <string name="shortcut_breathe">נשימה</string>
+</resources>

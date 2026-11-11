@@ -1,4 +1,5 @@
 // Daily / weekly text summaries (clipboard) and JSON backup export / import.
+import { isNative, shareFile } from './native.js';
 import { getState, getDay, validateBackup, replaceState, updateMeta } from './storage.js';
 import { lastNDays, todayKey, shortDate, weekdayName, fullDate } from './dates.js';
 import { computeRecords, exercisesForDay, loggedExtras, foodTotals, floorsOf, floorsTarget, descentFloorsOf, dayCompletion, completionPct, sortedFood, waterMl, drinksMl } from './stats.js';
@@ -7,6 +8,7 @@ import { sleepMinutes, fmtDuration, levelInfo, weekXP, walkHistory, BADGES, dayX
 import { int, dec1, dec2, trim, iso, plural, unitAmount } from './hebrew.js';
 import { dayInsights, weekInsights } from './insights.js';
 import { breathMinutes, techniqueById } from './breathing.js';
+import { cupMl } from './fluids.js';
 import { dayTypeOf, rotationDay, dayLabel, hasWorkout } from './rotation.js';
 import { summaryPlan, planLabel, targetText as coachTargetText } from './coach.js';
 import { exerciseById } from './storage.js';
@@ -84,8 +86,8 @@ function breathLine(day) {
   return `נשימה: ${minutesText(total)} (${parts.join(', ')})`;
 }
 
-/** "9 כוסות" / "כוס אחת" / "1.5 כוסות" — 250 ml per glass, one decimal. */
-const cupsText = (ml) => plural(Math.round((ml / 250) * 10) / 10, 'כוס אחת', 'כוסות', (n) => trim(n, 1));
+/** "9 כוסות" / "כוס אחת" / "1.5 כוסות" — by "גודל הכוס שלי" (default 250 ml), one decimal. */
+const cupsText = (ml) => plural(Math.round((ml / cupMl()) * 10) / 10, 'כוס אחת', 'כוסות', (n) => trim(n, 1));
 
 /* ---------- Daily summary ---------- */
 
@@ -285,6 +287,7 @@ function backupFile() {
 /** Download the backup file and record meta.lastBackupAt. */
 export function exportBackup() {
   const file = backupFile();
+  if (isNative()) return shareFile(file); // Android app: write the file and open the share sheet
   const url = URL.createObjectURL(file);
   const a = document.createElement('a');
   a.href = url;
@@ -297,6 +300,7 @@ export function exportBackup() {
 
 /** True when the system share sheet accepts files (Android Chrome, iOS Safari). */
 export function canShareBackup() {
+  if (isNative()) return true;
   try {
     return !!navigator.canShare?.({ files: [new File(['{}'], '70-backup.json', { type: 'application/json' })] });
   } catch {
@@ -311,6 +315,11 @@ export function canShareBackup() {
 export async function shareBackup() {
   const prev = getState().meta.lastBackupAt ?? null;
   const file = backupFile();
+  if (isNative()) {
+    if (await shareFile(file)) return true;
+    updateMeta({ lastBackupAt: prev ?? undefined });
+    return false;
+  }
   try {
     await navigator.share({ files: [file], title: file.name });
     return true;

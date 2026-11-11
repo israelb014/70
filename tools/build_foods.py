@@ -3,7 +3,7 @@
 Build data/foods.json (+ data/foods-meta.json) for the "70" app.
 
 Output (compact JSON, values per 100 g):
-  [{ "n": name, "k": kcal, "p": protein g, "u": [{ "l": unit, "g": grams }], "a": [aliases], "s": source }]
+  [{ "n": name, "k": kcal, "p": protein g, "u": [{ "l": unit, "g": grams }], "a": [aliases], "s": source, "d": 1 (drink) }]
   source: "label" (Israeli package labels) | "curated" (USDA-based list) | "tzameret" (Ministry of Health)
 
 Usage (from the repository root):
@@ -559,12 +559,14 @@ def parse_block(text, source):
         line = line.strip()
         if not line or line.startswith('#'):
             continue
-        parts = (line.split('|') + ['', ''])[:5]
-        name, kcal, protein, units, aliases = (p.strip() for p in parts)
+        parts = (line.split('|') + ['', '', ''])[:6]
+        name, kcal, protein, units, aliases, kind = (p.strip() for p in parts)
         f = {'n': name, 'k': num(kcal), 'p': num(protein), 'u': parse_units(units), 's': source}
         al = [a.strip() for a in aliases.split(',') if a.strip() and a.strip() != name]
         if al:
             f['a'] = al
+        if kind == 'משקה':
+            f['d'] = 1  # a drink: counts toward fluids whatever its unit
         foods.append(f)
     return foods
 

@@ -14,12 +14,16 @@ import {
   levelInfo, sleepMinutes, fmtDuration, lastSleep, durText, napMinutes, napsMinutes, totalSleepMinutes, hasSleep, sortedNaps, lastNap, napError,
 } from '../progress.js';
 import { waterMl, drinksMl, fluidsMl } from '../stats.js';
+import { cupMl } from '../fluids.js';
+import { isNative, openExternal } from '../native.js';
+import { pendingUpdate, RELEASES_PAGE } from '../updates.js';
+import { isPaused, currentPause, endPause, pauseLastDay } from '../pause.js';
 import { nowTime } from '../dates.js';
 import { dailySummary, copyText, exportBackup, canShareBackup, shareBackup, backupReminder, snoozeBackupReminder } from '../export.js';
 import { plural, int, trim } from '../hebrew.js';
 import { openTimePicker, timeField } from '../timepicker.js';
 import { dayInsights } from '../insights.js';
-import { photoReminderCard, snoozeReminder, startFlow } from './photos.js';
+import { photoReminderCard, snoozeReminder, startFlow, backupPhotos } from './photos.js';
 import { breathCard, startBreathing } from './breathe.js';
 import { foodTotals, completionPct } from '../stats.js';
 import { todayKey, lastNDays, addDays, shortDate, longLabel, relativeLabel } from '../dates.js';
@@ -79,6 +83,7 @@ function listHTML(k, day, st, ctx, rec, badge) {
     ${backupBanner()}
     ${photoReminderCard()}
     ${dateNav(k, '')}
+    ${pauseChip(k)}
     ${coachBanners(k)}
     ${planCard(k)}
     ${heroCard(k, day, st)}
@@ -134,10 +139,12 @@ function gridHTML(k, day, st) {
   const tiles = homeTiles(k, day, st);
   return `
     ${todayHeader(k)}
+    ${pauseChip(k)}
     ${ringsSection(k, day, st)}
     ${backupBanner()}
     ${photoReminderCard()}
     ${coachBanners(k)}
+    ${appBanners()}
     ${tileGrid(layoutOf('homeLayout', HOME_TILES).filter((x) => x.visible).map((x) => tile(tiles[x.id])))}
     ${insightCard(k)}
     ${copyDailyButton()}`;
@@ -159,6 +166,16 @@ function todayHeader(k) {
     <button type="button" class="dash-chip level-ring press" data-action="achievements" aria-label="רמה ${L.level} · הישגים">
       ${miniRing('level-dash', L.frac, 'var(--accent)', 60, 4, `<b>${num(L.level)}</b>`)}</button>
   </header>`;
+}
+
+/** "הקפאה עד DD.MM" (or "עד שתבטל") with "סיום הקפאה", on the days of a pause. */
+function pauseChip(k) {
+  if (k !== todayKey() || !isPaused(k)) return '';
+  const p = currentPause(k);
+  const last = p && pauseLastDay(p);
+  const dm = (key) => { const [, m, d] = key.split('-'); return `${d}.${m}`; };
+  return `<div class="pause-chip" data-pause-chip>${icon('pause')}<span>${last ? `הקפאה עד <bdi class="num" dir="ltr">${dm(last)}</bdi>` : 'הקפאה עד שתבטל'}</span>
+    <button type="button" class="link-btn press" data-action="pause-end">סיום הקפאה</button></div>`;
 }
 
 /** The three big rings (workout, steps, protein) with a legend, the streak chip and "עריכה". */
@@ -211,7 +228,7 @@ export function homeTiles(k, day, st) {
     ...(plan ? { label: planLabel(plan) } : {}),
     value: c.total ? `<bdi class="num" dir="ltr">${pct}<small>%</small></bdi>` : EMPTY.value,
     sub: plan ? esc(reasonLine(plan)) : c.total ? `${num(c.done)} מתוך ${num(c.total)} תרגילים${day.rest ? ' · יום מנוחה' : ''}` : EMPTY.sub,
-    sub2: esc(statusLine(day, st, c, steps, protein)),
+    sub2: esc(statusLine(day, st, c, steps, protein, k)),
     sub3: esc(tomorrowPreview(k, nowTime()) || ''),
     hero: true, // rendered as the "אימון היום" card
   });
@@ -222,7 +239,7 @@ export function homeTiles(k, day, st) {
 
   const sTarget = st.stepsTarget || 0;
   t.steps = mk('steps', 'steps', {
-    ...(steps ? { value: num(steps), sub: `מתוך ${num(sTarget)}` } : EMPTY),
+    ...(steps ? { value: num(steps), sub: `${srcHC(day)}מתוך ${num(sTarget)}` } : EMPTY),
     visual: line((d) => d.steps || 0, 'steps'), inline: true,
     quick: { action: 'steps-add', icon: 'plus', label: 'הוספת 1,000 צעדים', attrs: 'data-n="1000"' },
   });
@@ -240,17 +257,17 @@ export function homeTiles(k, day, st) {
   t.fluids = mk('fluids', 'water', {
     ...(ml ? { value: `${num(trim(ml / 1000, 2))}<small> ליטר</small>`, sub: `מתוך ${num(wTarget / 1000, 2)}` } : EMPTY),
     visual: line((d) => fluidsMl(d) / 1000, 'water'), inline: true,
-    quick: { action: 'water-quick', icon: 'plus', label: 'הוספת 250 מ״ל מים' },
+    quick: { action: 'water-quick', icon: 'plus', label: `הוספת ${cupMl()} מ״ל מים` },
   });
 
   const floors = floorsOf(day), fTarget = floorsTarget(st);
   const ups = day.climbs.length, downs = (day.descents || []).length;
-  t.stairs = mk('stairs', 'accent', {
+  t.stairs = mk('stairs', 'stairs', {
     ...(ups || downs ? {
       value: frac(fmt(floors), fmt(fTarget)),
       sub: `${ups === 1 ? 'עלייה אחת' : `${num(ups)} עליות`}${downs ? ` · ${downs === 1 ? 'ירידה אחת' : `${num(downs)} ירידות`}` : ''}`,
     } : EMPTY),
-    visual: line((d) => floorsOf(d), 'accent'), inline: true,
+    visual: line((d) => floorsOf(d), 'stairs'), inline: true,
     quick: { action: 'climb-quick', icon: 'plus', label: 'הוספת עלייה רגילה' },
   });
 
@@ -271,9 +288,9 @@ export function homeTiles(k, day, st) {
   const goal = st.rideGoalKm || 0;
   const km = day.rides.reduce((a, r) => a + (Number(r.km) || 0), 0);
   const longest = longestRideKm();
-  t.rides = mk('rides', 'accent', {
+  t.rides = mk('rides', 'stairs', {
     ...(day.rides.length ? { value: `${num(km)}<small> ק״מ</small>`, sub: `שיא ${num(longest)} · יעד ${num(goal)}` } : EMPTY),
-    visual: line((d) => d.rides.reduce((a, r) => a + (Number(r.km) || 0), 0), 'accent'), inline: true,
+    visual: line((d) => d.rides.reduce((a, r) => a + (Number(r.km) || 0), 0), 'stairs'), inline: true,
     quick: { action: 'ride-new', icon: 'plus', label: 'רכיבה חדשה' },
   });
 
@@ -461,7 +478,7 @@ function removeNap(ctx, k, i) {
 }
 
 // Quick-add amounts (ml)
-const GLASS = 250, BOTTLE = 500;
+const BOTTLE = 500; // a glass is "גודל הכוס שלי" (cupMl)
 const liters = (ml) => (ml / 1000).toLocaleString('he-IL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Water card: the ring shows TOTAL fluids (water added here + drinks from "אוכל"); the line shows the breakdown. */
@@ -480,30 +497,30 @@ function waterCard(day, st) {
         inner: `<div class="ring-big xs">${num(liters(ml))}</div><div class="muted small">ל׳</div>`,
       })}
       <div class="grow">
-        <div class="muted" data-water-of>מתוך ${num(target / 1000, 2)} ל׳ · ${esc(plural(Math.round((ml / GLASS) * 10) / 10, 'כוס אחת', 'כוסות', (n) => trim(n, 1)))}</div>
+        <div class="muted" data-water-of>מתוך ${num(target / 1000, 2)} ל׳ · ${esc(plural(Math.round((ml / cupMl()) * 10) / 10, 'כוס אחת', 'כוסות', (n) => trim(n, 1)))}</div>
         ${last ? `<div class="muted small">אחרון: ${num(last.ml)} מ״ל${last.time ? ` בשעה ${num(last.time)}` : ''}</div>` : ''}
       </div>
     </div>
     <div class="water-split" data-water-split>מים ${num(liters(water))} ל׳ · משקאות ${num(liters(drinks))} ל׳</div>
     <div class="water-btns">
-      <button type="button" class="water-add press" data-action="water-add" data-ml="${GLASS}">${icon('glass')}<strong>+ כוס</strong><span>${num(GLASS)} מ״ל</span></button>
+      <button type="button" class="water-add press" data-action="water-add" data-ml="${cupMl()}">${icon('glass')}<strong>+ כוס</strong><span>${num(cupMl())} מ״ל</span></button>
       <button type="button" class="water-add press" data-action="water-add" data-ml="${BOTTLE}">${icon('bottle')}<strong>+ בקבוק</strong><span>${num(BOTTLE)} מ״ל</span></button>
       <button type="button" class="water-add press" data-action="water-other">${icon('plus')}<strong>אחר</strong><span>מ״ל</span></button>
     </div>
   </section>`;
 }
 
-/** Tile quick action: +250 ml water on the shown day, with an undo toast. */
+/** Tile quick action: one glass ("גודל הכוס שלי") of water on the shown day, with an undo toast. */
 function quickWater(ctx) {
   const k = ctx.date;
   const target = getState().settings.waterTarget || 2500;
   const before = fluidsMl(getDay(k));
-  const entry = { ml: GLASS, time: nowTime() };
+  const entry = { ml: cupMl(), time: nowTime() };
   let index = -1;
   updateDay(k, (d) => { index = d.water.push(entry) - 1; });
   const reached = before < target && fluidsMl(getDay(k)) >= target;
   vibrate(reached ? HAPTIC.target : HAPTIC.item);
-  toast(reached ? 'יעד המים הושג' : `נוספו ${GLASS} מ״ל מים`, {
+  toast(reached ? 'יעד המים הושג' : `נוספו ${entry.ml} מ״ל מים`, {
     iconHTML: icon('drop'),
     action: { label: 'ביטול', onClick: () => {
       updateDay(k, (d) => {
@@ -603,7 +620,7 @@ function heroCard(k, day, st) {
       <li style="--c:var(--steps)"><i></i><span>צעדים</span><b>${num(steps)}</b></li>
       <li style="--c:var(--protein)"><i></i><span>חלבון</span><b>${num(protein)} ג׳</b></li>
     </ul>
-    <p class="hero-status">${esc(statusLine(day, st, c, steps, protein))}</p>
+    <p class="hero-status">${esc(statusLine(day, st, c, steps, protein, k))}</p>
   </section>`;
 }
 
@@ -611,9 +628,9 @@ function heroCard(k, day, st) {
  * One line: the first remaining item, in a fixed order — exercises (skipped on rest days),
  * steps, climbs, protein, water. Everything done → "כל היעדים של היום הושגו".
  */
-export function statusLine(day, st, c, steps, protein) {
+export function statusLine(day, st, c, steps, protein, k = null) {
   const exLeft = c.total - c.done;
-  if (!day.rest && exLeft > 0) return `עוד ${plural(exLeft, 'תרגיל אחד', 'תרגילים')}`;
+  if (!day.rest && exLeft > 0 && !(k && isPaused(k))) return `עוד ${plural(exLeft, 'תרגיל אחד', 'תרגילים')}`;
   if (st.stepsTarget && steps < st.stepsTarget) return `עוד ${plural(st.stepsTarget - steps, 'צעד אחד', 'צעדים', int)}`;
   const floors = floorsOf(day), fTarget = floorsTarget(st);
   if (fTarget && floors < fTarget) return `עוד ${plural(fTarget - floors, 'קומה אחת', 'קומות')}`;
@@ -621,6 +638,32 @@ export function statusLine(day, st, c, steps, protein) {
   const ml = fluidsMl(day);
   if (st.waterTarget && ml < st.waterTarget) return `עוד ${trim((st.waterTarget - ml) / 1000, 2)} ל׳ נוזלים`;
   return 'כל היעדים של היום הושגו';
+}
+
+/**
+ * Android app: "גרסה חדשה זמינה" when a newer GitHub Release exists. Web: a one-time "יש עכשיו אפליקציה"
+ * banner with both backups and a link to the latest release (closed for good with "סגירה").
+ */
+function appBanners() {
+  if (isNative()) {
+    const u = pendingUpdate();
+    return u ? `<section class="card app-banner" aria-label="עדכון" data-update-banner>
+      <div class="bb-head">${icon('download', 'head-ic')}<div class="bb-text"><strong>גרסה חדשה זמינה</strong>
+        <div class="bb-sub"><span>גרסה <bdi class="num" dir="ltr">${esc(u.version)}</bdi></span></div></div></div>
+      <div class="bb-actions"><button type="button" class="btn primary press" data-action="app-update" data-url="${esc(u.url)}">${icon('download')}<span>הורדה והתקנה</span></button></div>
+    </section>` : '';
+  }
+  if (getState().meta.appBannerDismissed) return '';
+  return `<section class="card app-banner" aria-label="אפליקציה" data-app-banner>
+    <div class="bb-head">${icon('today', 'head-ic')}<div class="bb-text"><strong>יש עכשיו אפליקציה</strong>
+      <div class="bb-sub"><span>כדי לעבור: גיבוי, גיבוי תמונות, ואז שחזור באפליקציה</span>
+        <button type="button" class="bb-later press" data-action="app-banner-close">סגירה</button></div></div></div>
+    <div class="bb-actions">
+      <button type="button" class="btn secondary press" data-action="backup-now">${icon('download')}<span>גיבוי</span></button>
+      <button type="button" class="btn secondary press" data-action="app-photos-backup">${icon('camera')}<span>גיבוי תמונות</span></button>
+      <a class="btn primary press" href="${RELEASES_PAGE}" target="_blank" rel="noopener">${icon('download')}<span>הורדת האפליקציה</span></a>
+    </div>
+  </section>`;
 }
 
 /** Backup reminder (top of "היום"): 7+ days since the last backup, or never with 3+ data days. */
@@ -644,6 +687,9 @@ function backupBanner() {
 
 const STEP_ADDS = [1000, 5000];
 
+/** Small Health Connect mark next to steps that came from it. */
+const srcHC = (day) => (day.stepsSource === 'hc' ? `<span class="src-hc" title="מ-Health Connect" data-src-hc>${icon('heart')}</span> ` : '');
+
 function stepsCard(day, st, badge) {
   const target = st.stepsTarget || 0;
   const steps = day.steps || 0;
@@ -660,7 +706,7 @@ function stepsCard(day, st, badge) {
           <input type="number" inputmode="numeric" min="0" data-change="steps" value="${day.steps ?? ''}" placeholder="0" enterkeyhint="done"></label>
         <div class="steps-add">${STEP_ADDS.map((n) =>
           `<button type="button" class="chip-btn press" data-action="steps-add" data-n="${n}" aria-label="הוספת ${int(n)} צעדים">\u200E+${int(n)}</button>`).join('')}</div>
-        <div class="muted small">יעד ${num(target)}</div>
+        <div class="muted small">${srcHC(day)}יעד ${num(target)}</div>
       </div>
     </div>
   </section>`;
@@ -672,12 +718,12 @@ function stairsCard(day, st, badge) {
   const floors = floorsOf(day);
   const target = floorsTarget(st);
   const downs = (day.descents || []).length, downFloors = descentFloorsOf(day); // descents: never part of the target
-  return `<section class="card role-accent">
+  return `<section class="card role-stairs">
     <div class="card-head">${icon('stairs', 'head-ic')}<h2>מדרגות</h2>${badge('climbs')}</div>
     <div class="row">
       ${ring({
         id: 'climbs', size: 108, stroke: 11, frac: target ? floors / target : 0,
-        color: target && floors >= target ? 'var(--success)' : 'var(--accent)',
+        color: target && floors >= target ? 'var(--success)' : 'var(--stairs)',
         inner: `<div class="ring-mid">${num(`${target ? Math.round(Math.min(1, floors / target) * 100) : 0}%`)}</div>`,
       })}
       <div class="grow">
@@ -758,12 +804,12 @@ function ridesCard(day, st, badge) {
       </li>`
     )
     .join('');
-  return `<section class="card role-accent">
+  return `<section class="card role-stairs">
     <div class="card-head">${icon('bike', 'head-ic')}<h2>רכיבה</h2>${badge('ride')}</div>
     <div class="row">
       ${ring({
         id: 'ride', size: 96, stroke: 10, frac: goal ? longest / goal : 0,
-        color: goal && longest >= goal ? 'var(--success)' : 'var(--accent)',
+        color: goal && longest >= goal ? 'var(--success)' : 'var(--stairs)',
         inner: `<div class="ring-mid">${num(longest)}</div><div class="muted xs">שיא ק״מ</div>`,
       })}
       <div class="grow">
@@ -920,7 +966,7 @@ function coachBanners(k, groupCard = true) {
   if (!coachOn()) return '';
   let out = '';
   const plan = planFor(k);
-  if (plan && !plan.locked && k === todayKey() && !hasSleep(getDay(k))) {
+  if (plan && !plan.locked && plan.dayType !== 'pause' && k === todayKey() && !hasSleep(getDay(k))) {
     out += `<section class="card coach-banner role-sleep" data-sleep-banner>
       <div class="bb-head">${icon('bed', 'head-ic')}<div class="bb-text"><strong>רשום שינה כדי שאתאים את האימון</strong></div>
         <button type="button" class="btn secondary press" data-action="coach-sleep">רישום</button></div>
@@ -942,11 +988,12 @@ function planCard(k) {
   const plan = planFor(k);
   if (!plan) return '';
   const rec = plan.dayType === 'recovery';
+  const paused = plan.dayType === 'pause';
   const preview = tomorrowPreview(k, nowTime());
   return `<section class="card plan-card role-accent" data-plan="${plan.dayType}:${plan.intensity}">
     <div class="plan-head">
-      <div class="grow"><span class="eyebrow">מאמן חכם</span><h2 data-plan-day>${esc(rec ? DAY_TYPES.recovery.name : DAY_TYPES[plan.dayType].name)}</h2></div>
-      ${rec ? '' : `<span class="int-chip int-${plan.intensity}" data-plan-int>יום ${INTENSITY[plan.intensity]}</span>`}
+      <div class="grow"><span class="eyebrow">מאמן חכם</span><h2 data-plan-day>${esc(DAY_TYPES[plan.dayType].name)}</h2></div>
+      ${rec || paused ? '' : `<span class="int-chip int-${plan.intensity}" data-plan-int>יום ${INTENSITY[plan.intensity]}</span>`}
     </div>
     <p class="plan-reason" data-plan-reason>${esc(reasonLine(plan))}</p>
     ${rec ? `<div class="plan-suggest">
@@ -956,7 +1003,7 @@ function planCard(k) {
       </div>` : ''}
     <div class="plan-foot">
       <span class="muted small">${plan.locked ? 'התוכנית ננעלה להיום' : `מוכנות ${num(plan.score)}`}</span>
-      <button type="button" class="link-btn press" data-action="plan-change">החלפה</button>
+      ${paused ? '' : '<button type="button" class="link-btn press" data-action="plan-change">החלפה</button>'}
     </div>
     ${preview ? `<p class="plan-tomorrow muted small" data-tomorrow>${esc(preview)}</p>` : ''}
   </section>`;
@@ -1118,6 +1165,18 @@ async function onClick(e, ctx) {
       ctx.layoutFor = b.dataset.layout;
       ctx.layoutDraft = null;
       return ctx.goTab('layout');
+    case 'app-update':
+      return openExternal(b.dataset.url);
+    case 'app-banner-close':
+      updateMeta({ appBannerDismissed: true });
+      return rerender();
+    case 'app-photos-backup':
+      return backupPhotos(ctx);
+    case 'pause-end':
+      endPause();
+      vibrate(HAPTIC.item);
+      toast('ההקפאה הסתיימה');
+      return rerender();
     case 'coach-sleep':
       if (tilesOn()) return ctx.openDetail('sleep');
       root().querySelector('.card.role-sleep')?.scrollIntoView({ block: 'center' });
@@ -1341,7 +1400,7 @@ async function onClick(e, ctx) {
       const prev = getDay(k).steps ?? null;
       const before = prev || 0;
       const target = st.stepsTarget;
-      updateDay(k, (d) => (d.steps = before + n));
+      updateDay(k, (d) => { d.steps = before + n; d.stepsManual = true; delete d.stepsSource; }); // a hand edit wins over Health Connect
       const reached = target && before < target && before + n >= target;
       vibrate(reached ? HAPTIC.target : HAPTIC.item);
       toast(reached ? 'יעד הצעדים הושג' : `נוספו ${int(n)} צעדים`, {
@@ -1394,7 +1453,7 @@ function onChange(e, ctx) {
     const v = parseNum(t.value);
     const target = getState().settings.stepsTarget;
     const before = getDay(ctx.date).steps || 0;
-    updateDay(ctx.date, (d) => (d.steps = v !== null && v >= 0 ? Math.round(v) : null));
+    updateDay(ctx.date, (d) => { d.steps = v !== null && v >= 0 ? Math.round(v) : null; d.stepsManual = true; delete d.stepsSource; });
     const after = getDay(ctx.date).steps || 0;
     if (target && before < target && after >= target) {
       vibrate(HAPTIC.target);

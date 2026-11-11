@@ -12,10 +12,11 @@ const monthFmt = new Intl.DateTimeFormat('he-IL', { month: 'short' });
 /** Color for a score; matches the 5 legend steps. */
 export function scoreColor(score) {
   if (!(score > 0)) return '#1C2026';
-  if (score <= 0.25) return 'rgba(255,106,0,0.25)';
-  if (score <= 0.5) return 'rgba(255,106,0,0.5)';
-  if (score <= 0.75) return 'rgba(255,106,0,0.75)';
-  return 'rgba(255,106,0,1)';
+  // Steps of the brand accent (themes change it).
+  if (score <= 0.25) return 'color-mix(in srgb, var(--accent) 25%, transparent)';
+  if (score <= 0.5) return 'color-mix(in srgb, var(--accent) 50%, transparent)';
+  if (score <= 0.75) return 'color-mix(in srgb, var(--accent) 75%, transparent)';
+  return 'var(--accent)';
 }
 
 export function heatmapCard() {
@@ -54,7 +55,7 @@ export function heatmapCard() {
       // Rest days: empty color with a protein-teal outline (stroke drawn inside the cell bounds).
       cells += rest
         ? `<rect class="hm-cell" data-day="${k}" data-score="${score.toFixed(3)}" x="${x + 0.75}" y="${y + 0.75}" width="${CELL - 1.5}" height="${CELL - 1.5}" rx="3" fill="#1C2026" stroke="#2DD4BF" stroke-width="1.5"/>`
-        : `<rect class="hm-cell" data-day="${k}" data-score="${score.toFixed(3)}" x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="3" fill="${scoreColor(score)}"/>`;
+        : `<rect class="hm-cell" data-day="${k}" data-score="${score.toFixed(3)}" x="${x}" y="${y}" width="${CELL}" height="${CELL}" rx="3" style="fill:${scoreColor(score)}"/>`;
     }
   }
   const labels = DAY_INITIALS.map((d, r) => `<span style="top:${TOP + r * STEP}px">${d}</span>`).join('');

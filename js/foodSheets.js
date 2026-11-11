@@ -31,7 +31,8 @@ export async function openAmountSheet(dayKey, food, { editableName = false, sour
   // "נחשב לנוזלים": the food's remembered choice, otherwise the drink rules (re-evaluated on unit change until touched).
   let fluidTouched = false;
   function fluidPreset() {
-    return typeof mem?.fluid === 'boolean' ? mem.fluid : drinkByRules(food.name, units[unitIdx].l);
+    // A database drink ("d": 1) is a fluid whatever its unit; otherwise the rules decide.
+    return typeof mem?.fluid === 'boolean' ? mem.fluid : food.drink || drinkByRules(food.name, units[unitIdx].l);
   }
   const unitChips = units
     .map(

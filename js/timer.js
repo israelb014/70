@@ -1,4 +1,5 @@
 // Full-screen countdown for timed holds: big SVG ring, Wake Lock, beep + vibration at the end.
+import { isNative, keepAwake } from './native.js';
 import { icon, esc, beep, vibrate, primeAudio } from './ui.js';
 import { arcPath } from './charts.js';
 
@@ -40,6 +41,7 @@ export function runTimer(seconds, name) {
     let wakeLock = null;
 
     const requestWake = async () => {
+      if (isNative()) { keepAwake(true); return; } // Android app: keep-awake plugin
       try {
         if ('wakeLock' in navigator && document.visibilityState === 'visible') {
           wakeLock = await navigator.wakeLock.request('screen');
@@ -65,6 +67,7 @@ export function runTimer(seconds, name) {
       } catch {
         /* ignore */
       }
+      if (isNative()) keepAwake(false);
       el.classList.remove('open');
       setTimeout(() => {
         el.remove();

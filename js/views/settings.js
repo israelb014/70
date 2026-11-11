@@ -2,6 +2,7 @@
 import { getState, updateSettings, resetAll, upsertCustomFood, deleteCustomFood, uid, save } from '../storage.js';
 import { DAY_NAMES, MIN_DAYS, MAX_DAYS } from '../rotation.js';
 import { weightsList } from '../coach.js';
+import { themeCard, pauseCard, autoBackupHTML, healthCard, remindersCard, fillHealthCard, onCardsChange, onCardsClick } from './settingsCards.js';
 import { todayKey } from '../dates.js';
 import { icon, esc, num, toast, confirmDialog, invalid, parseNum } from '../ui.js';
 import { productSheet } from '../foodSheets.js';
@@ -16,7 +17,7 @@ import { breathSettingsCard, saveBreathSetting } from './breathe.js';
 
 const GROUPS = [
   { title: 'משקל וגוף', icon: 'scale', keys: ['startWeight', 'targetWeight', 'height'] },
-  { title: 'יעדים יומיים', icon: 'today', keys: ['proteinTarget', 'stepsTarget', 'rideGoalKm', 'sleepTarget', 'waterTarget'] },
+  { title: 'יעדים יומיים', icon: 'today', keys: ['proteinTarget', 'stepsTarget', 'rideGoalKm', 'sleepTarget', 'waterTarget', 'cupMl'] },
   { title: 'מדרגות', icon: 'stairs', keys: ['climbsTarget', 'floorsRegular', 'floorsRoof'] },
 ];
 
@@ -32,8 +33,10 @@ export function render(root, ctx) {
       </section>`
     ).join('')}
     ${screenModeCard(st)}
+    ${themeCard(st)}
     ${coachCard(st)}
     ${st.coach?.enabled === false ? rotationCard(st) : ''}
+    ${pauseCard()}
     <section class="card">
       <div class="card-head">${icon('dumbbell', 'head-ic')}<h2>תרגילים</h2></div>
       ${exerciseEditorHTML()}
@@ -48,8 +51,11 @@ export function render(root, ctx) {
         ${canShareBackup() ? `<button type="button" class="btn secondary block press" data-action="share-backup">${icon('share')}<span>שיתוף הקובץ</span></button>` : ''}
         <button type="button" class="btn secondary block press" data-action="import">${icon('upload')}<span>שחזור מגיבוי</span></button>
       </div>
+      ${autoBackupHTML()}
       <input type="file" accept="application/json,.json" data-file hidden>
     </section>
+    ${healthCard()}
+    ${remindersCard()}
     ${breathSettingsCard()}
     ${photoSettingsCard()}
     <section class="card danger-card">
@@ -59,6 +65,7 @@ export function render(root, ctx) {
     <p class="version">70 · גרסה <bdi class="num" dir="ltr">${APP_VERSION}</bdi><br>
       <span data-db-about>מאגר המזון: מזונות נפוצים בישראל (תוויות מוצרים, USDA, צמרת) · ברקודים: Open Food Facts</span></p>`;
   fillDbAbout(root);
+  fillHealthCard(root);
 
   root.onclick = (e) => onClick(e, ctx, root);
   root.onchange = (e) => onChange(e, ctx);
@@ -183,6 +190,7 @@ function floorsTargetText(st) {
 
 function onChange(e, ctx) {
   const t = e.target;
+  if (onCardsChange(t, ctx)) return;
   if (t.matches('[data-coach-on]')) {
     saveCoach({ enabled: t.value === 'on' });
     toast('נשמר');
@@ -239,6 +247,7 @@ async function onClick(e, ctx, root) {
   const b = e.target.closest('[data-action]');
   if (!b) return;
   const a = b.dataset.action;
+  if (await onCardsClick(a, b, ctx, root)) return;
   if (a.startsWith('ex-')) {
     if (await handleExerciseAction(a, b.dataset.id)) ctx.rerender();
     return;

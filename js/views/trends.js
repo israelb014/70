@@ -85,9 +85,9 @@ function stairsTrendCard(st, keys) {
   const target = floorsTarget(st);
   const downs = keys.map((k) => descentFloorsOf(getDay(k)));
   const totalDown = downs.reduce((a, b) => a + b, 0);
-  return `<section class="card role-accent">
+  return `<section class="card role-stairs">
     <div class="card-head">${icon('stairs', 'head-ic')}<h2>מדרגות · 7 ימים</h2></div>
-    ${barChart({ keys, values: keys.map((k) => floorsOf(getDay(k))), target, color: 'var(--accent)', format: (v) => int(v), unit: 'קומות' })}
+    ${barChart({ keys, values: keys.map((k) => floorsOf(getDay(k))), target, color: 'var(--stairs)', format: (v) => int(v), unit: 'קומות' })}
     <p class="legend"><span class="lg-line"></span>יעד ${num(target)} קומות</p>
     <div class="hm-stats">
       <div><span class="stat-num">${num(sum(keys.map((k) => floorsOf(getDay(k)))))}</span><span class="muted small">קומות בעלייה</span></div>
@@ -98,9 +98,9 @@ function stairsTrendCard(st, keys) {
 
 function ridesTrendCard(st, keys) {
   const km = keys.map((k) => rideKm(getDay(k)));
-  return `<section class="card role-accent">
+  return `<section class="card role-stairs">
     <div class="card-head">${icon('bike', 'head-ic')}<h2>אופניים · 7 ימים</h2></div>
-    ${barChart({ keys, values: km, color: 'var(--accent)', unit: 'ק״מ' })}
+    ${barChart({ keys, values: km, color: 'var(--stairs)', unit: 'ק״מ' })}
     <div class="hm-stats">
       <div><span class="stat-num">${num(sum(km))}</span><span class="muted small">ק״מ בשבוע</span></div>
       <div><span class="stat-num">${num(longestIn(keys))}</span><span class="muted small">הרכיבה הארוכה</span></div>
@@ -111,9 +111,9 @@ function ridesTrendCard(st, keys) {
 function kcalTrendCard(st, keys) {
   const kcal = keys.map((k) => Math.round(foodTotals(k).kcal));
   const logged = keys.filter((k) => (getDay(k).food || []).length);
-  return `<section class="card role-accent">
+  return `<section class="card role-kcal">
     <div class="card-head">${icon('bolt', 'head-ic')}<h2>קלוריות · 7 ימים</h2></div>
-    ${barChart({ keys, values: kcal, color: 'var(--accent)', format: (v) => int(v), unit: 'קק״ל' })}
+    ${barChart({ keys, values: kcal, color: 'var(--kcal)', format: (v) => int(v), unit: 'קק״ל' })}
     <div class="hm-stats">
       <div><span class="stat-num">${logged.length ? num(Math.round(avgOf(logged, (k) => foodTotals(k).kcal))) : '–'}</span><span class="muted small">ממוצע קק״ל ליום</span></div>
       <div><span class="stat-num">${frac(logged.length, 7)}</span><span class="muted small">ימים עם תיעוד</span></div>
@@ -217,11 +217,11 @@ function trendTiles(st) {
 
   const weights = getState().weights;
   const lost = st.startWeight - (weights.at(-1)?.kg ?? st.startWeight);
-  t.weight = mk('weight', 'accent', weights.length ? {
+  t.weight = mk('weight', 'weight', weights.length ? {
     value: cur.weight ? `${num(Math.round(cur.weight * 10) / 10)}<small> ק״ג</small>` : '—',
     sub: cur.weight ? deltaHTML(cur.weight, prev.weight, { dir: -1, mode: 'abs', unit: 'ק״ג' }) : 'אין שקילה ב-7 הימים',
     sub2: `${lost >= 0 ? 'ירדו' : 'עלו'} ${num(Math.round(Math.abs(lost) * 10) / 10)} ק״ג מההתחלה`,
-    visual: sparkline(weights.slice(-10).map((w) => w.kg), 'var(--accent)'),
+    visual: sparkline(weights.slice(-10).map((w) => w.kg), 'var(--weight)'),
   } : EMPTY);
 
   const bars = (vals, opts) => miniBars(vals, opts);
@@ -248,16 +248,16 @@ function trendTiles(st) {
     visual: bars(days.map((d) => totalSleepMinutes(d) / 60), { target: st.sleepTarget || 8, color: 'var(--sleep)', stack: days.map((d) => napsMinutes(d) / 60), stackColor: 'var(--sleep-light)' }),
   } : EMPTY);
 
-  t.stairs = mk('stairs', 'accent', cur.floors || cur.downFloors ? {
+  t.stairs = mk('stairs', 'stairs', cur.floors || cur.downFloors ? {
     value: `${num(cur.floors)}<small> קומות</small>`, sub: deltaHTML(cur.floors, prev.floors),
     sub2: cur.downFloors ? `ירידות: ${num(cur.downFloors)} קומות` : 'סה״כ בעלייה',
-    visual: bars(days.map(floorsOf), { target: floorsTarget(st), color: 'var(--accent)' }),
+    visual: bars(days.map(floorsOf), { target: floorsTarget(st), color: 'var(--stairs)' }),
   } : EMPTY);
 
-  t.rides = mk('rides', 'accent', cur.km ? {
+  t.rides = mk('rides', 'stairs', cur.km ? {
     value: `${num(Math.round(cur.km * 10) / 10)}<small> ק״מ</small>`, sub: deltaHTML(cur.km, prev.km),
     sub2: `הארוכה: ${num(cur.longest)} ק״מ`,
-    visual: bars(days.map(rideKm), { color: 'var(--accent)' }),
+    visual: bars(days.map(rideKm), { color: 'var(--stairs)' }),
   } : EMPTY);
 
   t.breath = mk('breath', 'breath', cur.breath ? {
@@ -266,9 +266,9 @@ function trendTiles(st) {
     visual: bars(days.map(breathMinutes), { target: breathGoal(), color: 'var(--breath)' }),
   } : EMPTY);
 
-  t.kcal = mk('kcal', 'accent', cur.kcal ? {
+  t.kcal = mk('kcal', 'kcal', cur.kcal ? {
     value: num(Math.round(cur.kcal)), sub: deltaHTML(cur.kcal, prev.kcal, { dir: 0 }), sub2: 'ממוצע קק״ל ליום',
-    visual: bars(keys.map((k) => Math.round(foodTotals(k).kcal)), { color: 'var(--accent)' }),
+    visual: bars(keys.map((k) => Math.round(foodTotals(k).kcal)), { color: 'var(--kcal)' }),
   } : EMPTY);
 
   // Records: new this week + the latest record's name.
@@ -307,7 +307,7 @@ function miniHeatmap() {
       const k = addDays(sunday, (c - 7) * 7 + r); // column 0 = 7 weeks ago, column 7 = this week
       if (k > today) continue;
       const rest = getState().days[k]?.rest;
-      cells += `<rect class="mh-cell" data-day="${k}" x="${W - C - c * S}" y="${r * S}" width="${C}" height="${C}" rx="2" fill="${rest ? '#1C2026' : scoreColor(dayScore(k))}"${rest ? ' stroke="#2DD4BF" stroke-width="1"' : ''}/>`;
+      cells += `<rect class="mh-cell" data-day="${k}" x="${W - C - c * S}" y="${r * S}" width="${C}" height="${C}" rx="2" style="fill:${rest ? '#1C2026' : scoreColor(dayScore(k))}"${rest ? ' stroke="#2DD4BF" stroke-width="1"' : ''}/>`;
     }
   }
   return `<svg class="mini-heat" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true">${cells}</svg>`;

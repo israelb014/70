@@ -67,6 +67,7 @@ export function normalize(d) {
     // Smart coach: exercises whose unknown group the user skipped ("לאיזה אזור").
     if (Array.isArray(d.meta.groupSkip)) s.meta.groupSkip = d.meta.groupSkip.filter((x) => typeof x === 'string');
     if (d.meta.photoPersisted === true) s.meta.photoPersisted = true; // navigator.storage.persist() already asked
+    if (d.meta.appBannerDismissed === true) s.meta.appBannerDismissed = true; // web: "יש עכשיו אפליקציה" closed
     // Last breathing technique + duration (setup prefill).
     if (isObj(d.meta.breathLast)) s.meta.breathLast = { technique: String(d.meta.breathLast.technique || ''), minutes: Number(d.meta.breathLast.minutes) || 5 };
     // Keep the stored key order, so an exported backup re-imports byte-identical.
@@ -97,7 +98,7 @@ export function normalize(d) {
           ? { bed: day.sleep.bed, wake: day.sleep.wake } : null,
         naps: Array.isArray(day.naps)
           ? day.naps.filter((n) => isObj(n) && TIME_RE.test(n.start) && TIME_RE.test(n.end) && n.end > n.start)
-            .map((n) => ({ start: n.start, end: n.end }))
+            .map((n) => ({ start: n.start, end: n.end, ...(typeof n.hcId === 'string' ? { hcId: n.hcId } : {}) }))
           : [],
         water: Array.isArray(day.water)
           ? day.water.filter((w) => isObj(w) && Number(w.ml) > 0)
@@ -111,14 +112,27 @@ export function normalize(d) {
           ? day.descents.filter((x) => isObj(x) && ['regular', 'roof', 'custom'].includes(x.type))
             .map((x) => ({ type: x.type, ...(Number(x.floors) > 0 ? { floors: Number(x.floors) } : {}), ...(TIME_RE.test(x.time) ? { time: x.time } : {}), ...(Number(x.at) > 0 ? { at: Number(x.at) } : {}) }))
           : [],
-        // Rotation: manual workout day type for this date (optional, missing = none).
-        ...(typeof day.workoutDay === 'string' && day.workoutDay ? { workoutDay: day.workoutDay } : {}),
-        // Smart coach: the day's plan (stored once locked, or holding an override / undo).
-        ...(isObj(day.plan) ? { plan: day.plan } : {}),
+        // Optional fields (missing = none), kept in their stored order so a backup re-imports identically.
+        ...optionalDayFields(day),
       };
     }
   }
   return s;
+}
+
+/**
+ * Optional day fields: workoutDay (rotation), plan (smart coach), stepsManual / stepsSource / sleepSource
+ * (Health Connect: a hand edit wins; "hc" = filled from Health Connect).
+ */
+const DAY_OPTIONAL = {
+  workoutDay: (v) => typeof v === 'string' && v,
+  plan: isObj,
+  stepsManual: (v) => v === true,
+  stepsSource: (v) => v === 'hc',
+  sleepSource: (v) => v === 'hc',
+};
+function optionalDayFields(day) {
+  return Object.fromEntries(Object.keys(day).filter((k) => DAY_OPTIONAL[k]?.(day[k])).map((k) => [k, day[k]]));
 }
 
 /** Returns an error message (Hebrew) or null when the backup looks valid. */

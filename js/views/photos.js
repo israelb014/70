@@ -1,6 +1,7 @@
 // "תמונות התקדמות": sessions list, guided new-session flow (camera / gallery, alignment overlay),
 // session editing, full-screen viewer (pinch-zoom, swipe), compare screen (side by side / wipe) and
 // the photo zip backup. Photos never leave the device unless the user exports the zip.
+import { isNative, getPhoto, shareFile } from '../native.js';
 import { getState, updateSettings } from '../storage.js';
 import { icon, esc, num, fmt, toast, openSheet, confirmDialog, invalid, emptyState, vibrate, HAPTIC, reducedMotion } from '../ui.js';
 import { todayKey, longLabel, shortDate, fullDate } from '../dates.js';
@@ -162,13 +163,14 @@ export function startFlow(ctx, opts = {}) {
   requestAnimationFrame(() => el.classList.add('open'));
   const body = el.querySelector('[data-f-body]');
 
-  const pick = (src) => new Promise((resolve) => {
+  // Android app: the system camera / gallery through @capacitor/camera (never saved to the gallery).
+  const pick = (src) => (isNative() ? getPhoto(src === 'cam' ? 'camera' : 'gallery') : new Promise((resolve) => {
     const inp = el.querySelector(src === 'cam' ? '[data-f-cam]' : '[data-f-gal]');
     inp.value = '';
     inp.onchange = () => resolve(inp.files?.[0] || null);
     inp.oncancel = () => resolve(null);
     inp.click();
-  });
+  }));
   const urlOf = (blob) => { const u = URL.createObjectURL(blob); urlsToRevoke.push(u); return u; };
 
   const close = () => {
@@ -626,7 +628,10 @@ export async function backupPhotos(ctx) {
   let ok = false;
   let canShare = false;
   try { canShare = !!navigator.canShare?.({ files: [file] }); } catch { canShare = false; }
-  if (canShare) {
+  if (isNative()) {
+    ok = await shareFile(file);
+    if (ok) toast('גיבוי התמונות שותף');
+  } else if (canShare) {
     try { await navigator.share({ files: [file], title: file.name }); ok = true; } catch { ok = false; }
     if (ok) toast('גיבוי התמונות שותף');
   } else {

@@ -1,5 +1,6 @@
 // "נשימה": today card, setup sheet, full-screen session (time-driven phases, soft cues, wake lock),
 // end screen, 7-day chart and settings card.
+import { isNative, keepAwake } from '../native.js';
 import { getState, getDay, updateSettings } from '../storage.js';
 import { ring, barChart, arcPath } from '../charts.js';
 import { icon, esc, num, toast, openSheet, vibrate, reducedMotion } from '../ui.js';
@@ -129,6 +130,7 @@ export function runSession(ctx, { technique, minutes }) {
 
   const elapsed = () => acc + (running ? Date.now() - runFrom : 0); // ms incl. the prep countdown
   const requestWake = async () => {
+    if (isNative()) { keepAwake(true); return; } // Android app: keep-awake plugin
     try { if ('wakeLock' in navigator && document.visibilityState === 'visible') wakeLock = await navigator.wakeLock.request('screen'); } catch { /* denied */ }
   };
   const cue = () => {
@@ -208,6 +210,7 @@ export function runSession(ctx, { technique, minutes }) {
     cancelAnimationFrame(raf);
     document.removeEventListener('visibilitychange', onVis);
     try { wakeLock?.release(); } catch { /* ignore */ }
+    if (isNative()) keepAwake(false);
     const saved = saveBreathing(tech.id, Math.min(total, seconds));
     if (complete) cue();
     const todayTotal = breathMinutes(getDay(todayKey()));

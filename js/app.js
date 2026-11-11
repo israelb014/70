@@ -15,6 +15,8 @@ import * as wizard from './views/wizard.js';
 import * as layout from './views/layout.js';
 import { startBreathing } from './views/breathe.js';
 import { tilesOn } from './tiles.js';
+import { startThemeClock } from './theme.js';
+import { isNative } from './native.js';
 
 const TABS = [
   { id: 'today', label: 'היום', icon: 'today', view: today },
@@ -260,8 +262,12 @@ if (launchUrl.searchParams.has('action')) {
   history.replaceState(history.state, '', launchUrl.pathname + launchUrl.search + launchUrl.hash);
 }
 
+startThemeClock();
 render();
 runAction(launchAction);
+if (isNative()) {
+  import('./nativeApp.js').then((m) => m.initNative({ ctx, screens: SCREENS, runAction, rerender: () => ctx.rerender() }));
+}
 
 // App already open in the background: the launch handler navigates it (a fresh load, handled above);
 // browsers that focus the existing window instead deliver the shortcut URL here.
@@ -278,7 +284,8 @@ if ('launchQueue' in window) {
  * PWA without reloading it). The new worker activates at once (skipWaiting + clients.claim); when it
  * takes control the page reloads once to run the new code.
  */
-if ('serviceWorker' in navigator) {
+// The Android app runs from local files with its own update check (js/updates.js): no service worker there.
+if ('serviceWorker' in navigator && !isNative()) {
   const hadController = !!navigator.serviceWorker.controller; // first install: nothing old to replace
   let reloading = false;
   const RELOAD_KEY = 'seventy.swReload';

@@ -1,5 +1,12 @@
 // Fluids: drinks logged in "אוכל" count toward the daily water total, computed on the fly (past days too).
 import { normalizeHe } from './foods.js';
+import { getState } from './storage.js';
+
+/** "גודל הכוס שלי" in ml (100–500, default 250): "+ כוס", the נוזלים quick action and glass counts. */
+export const cupMl = () => {
+  const v = Number(getState().settings?.cupMl);
+  return v >= 100 && v <= 500 ? Math.round(v) : 250;
+};
 
 const norm = (list) => list.map(normalizeHe);
 /** Units that always mean liquid (the entry's unit word). */

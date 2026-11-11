@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static app shortcuts → the same actions as the web app's ?action= parameter (js/nativeApp.js). -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="water"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_water"
+        android:shortcutShortLabel="@string/shortcut_water">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="seventy://action/water"
+            android:targetPackage="com.ibfix.seventy"
+            android:targetClass="com.ibfix.seventy.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="food"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_food"
+        android:shortcutShortLabel="@string/shortcut_food">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="seventy://action/food"
+            android:targetPackage="com.ibfix.seventy"
+            android:targetClass="com.ibfix.seventy.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="scan"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_scan"
+        android:shortcutShortLabel="@string/shortcut_scan">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="seventy://action/scan"
+            android:targetPackage="com.ibfix.seventy"
+            android:targetClass="com.ibfix.seventy.MainActivity" />
+    </shortcut>
+    <shortcut
+        android:shortcutId="breathe"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_breathe"
+        android:shortcutShortLabel="@string/shortcut_breathe">
+        <intent
+            android:action="android.intent.action.VIEW"
+            android:data="seventy://action/breathe"
+            android:targetPackage="com.ibfix.seventy"
+            android:targetClass="com.ibfix.seventy.MainActivity" />
+    </shortcut>
+</shortcuts>

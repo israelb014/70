@@ -5,6 +5,7 @@ import { getState, getDay, exerciseById } from './storage.js';
 import { todayKey, addDays, lastNDays } from './dates.js';
 import { exerciseProgress, dayCompletion, isDayActive, foodTotals, floorsOf, floorsTarget, descentFloorsOf } from './stats.js';
 import { plural } from './hebrew.js';
+import { isPaused } from './pause.js';
 import { breathMinutes, breathGoal } from './breathing.js';
 
 /* ---------- Sleep ---------- */
@@ -217,7 +218,7 @@ export function walkHistory() {
   for (let k = first; k <= end; k = addDays(k, 1)) {
     const day = state.days[k];
     // Streak (today not yet active doesn't break it, but it can't extend it either)
-    run = isDayActive(k) ? run + 1 : 0;
+    if (!isPaused(k)) run = isDayActive(k) ? run + 1 : 0; // pause days freeze the streak
     m.streak = Math.max(m.streak, run);
     if (day) {
       const anyDone = Object.entries(day.exercises || {}).some(([id, e]) => {

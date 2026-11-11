@@ -2,6 +2,7 @@
 import { getState, updateSettings } from '../storage.js';
 import { icon, esc, parseNum, invalid, confirmDialog, toast } from '../ui.js';
 import { readBackupFile, restoreBackup } from '../export.js';
+import { restorePhotos } from './photos.js';
 import { exerciseEditorHTML, handleExerciseAction } from '../exerciseEditor.js';
 
 /** All numeric settings with labels and defaults (shared with the settings screen). */
@@ -17,6 +18,7 @@ export const SETTINGS_FIELDS = {
   floorsRoof: { label: 'קומות בעלייה לגג', unit: 'קומות', def: 10, required: true, step: 1, min: 1 },
   sleepTarget: { label: 'יעד שינה', unit: 'שעות', def: 8, step: 0.5, min: 3, max: 14 },
   waterTarget: { label: 'יעד מים יומי', unit: 'מ״ל', def: 2500, step: 50, min: 250, max: 10000 },
+  cupMl: { label: 'גודל הכוס שלי', unit: 'מ״ל', def: 250, step: 10, min: 100, max: 500 },
   breathGoal: { label: 'יעד נשימה יומי', unit: 'דקות', def: 5, step: 1, min: 1, max: 120 },
 };
 
@@ -73,8 +75,12 @@ export function render(root, onDone) {
       <button type="button" class="btn primary press" data-action="wiz-next">
         <span>${last ? (hasEx ? 'סיום' : 'דלג וסיים') : 'המשך'}</span>${last ? icon('check') : icon('chevL')}</button>
     </div>
-    ${wiz.step === 0 ? `<button type="button" class="link-btn" data-action="wiz-restore">${icon('upload')} יש לי גיבוי — שחזור</button>
-      <input type="file" accept="application/json,.json" data-wiz-file hidden>` : ''}
+    ${wiz.step === 0 ? `<div class="wiz-restore-row">
+        <button type="button" class="link-btn" data-action="wiz-restore">${icon('upload')} יש לי גיבוי — שחזור</button>
+        <button type="button" class="link-btn" data-action="wiz-restore-photos">${icon('camera')} שחזור תמונות</button>
+      </div>
+      <input type="file" accept="application/json,.json" data-wiz-file hidden>
+      <input type="file" accept=".zip,application/zip" data-wiz-photos hidden>` : ''}
   </div>`;
 
   if (!s.exercises) setTimeout(() => root.querySelector('input')?.focus({ preventScroll: true }), 50);
@@ -83,6 +89,12 @@ export function render(root, onDone) {
 
   // Restore a backup straight from the first screen (e.g. on a new phone).
   root.onchange = async (e) => {
+    // Progress photos zip (moving to the Android app: data backup + photos backup → restore both).
+    const zip = e.target.matches('[data-wiz-photos]') && e.target.files?.[0];
+    if (zip) {
+      e.target.value = '';
+      return void (await restorePhotos(zip));
+    }
     const file = e.target.matches('[data-wiz-file]') && e.target.files?.[0];
     if (!file) return;
     e.target.value = '';
@@ -112,6 +124,7 @@ export function render(root, onDone) {
       return;
     }
     if (a === 'wiz-restore') return root.querySelector('[data-wiz-file]').click();
+    if (a === 'wiz-restore-photos') return root.querySelector('[data-wiz-photos]').click();
     if (a === 'wiz-back') {
       collect(root);
       wiz.step--;

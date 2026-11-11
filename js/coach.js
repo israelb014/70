@@ -14,6 +14,7 @@ import { totalSleepMinutes, hasSleep, fmtDuration } from './progress.js';
 import { todayKey, addDays, lastNDays } from './dates.js';
 import { coachOn } from './rotation.js';
 import { int } from './hebrew.js';
+import { isPaused, pausedBetween } from './pause.js';
 
 export { coachOn };
 
@@ -84,8 +85,10 @@ export const DAY_TYPES = {
   lower: { id: 'lower', name: 'יום רגליים', groups: ['legs', 'core'] },
   full: { id: 'full', name: 'יום גוף מלא', groups: GROUP_IDS },
   recovery: { id: 'recovery', name: 'יום התאוששות', groups: [] },
+  pause: { id: 'pause', name: 'הקפאה', groups: [] },
 };
-export const INTENSITY = { full: 'מלא', normal: 'רגיל', light: 'קל', recovery: 'התאוששות' };
+export const INTENSITY = { full: 'מלא', normal: 'רגיל', light: 'קל', recovery: 'התאוששות', pause: 'הקפאה' };
+const SINGLE = new Set(['recovery', 'pause']); // labels without an intensity
 
 /** "עליון" (push + pull + arms + grip) and "רגליים ובטן" — or one full-body day when either has fewer than 2 exercises. */
 export function coachDays() {
@@ -113,7 +116,7 @@ function lastTrained(k, groups) {
 export function trainingStreak(k) {
   let n = 0;
   for (let d = addDays(k, -1); n < 60; d = addDays(d, -1)) {
-    if (getDay(d).rest || !loggedOn(d).length) break;
+    if (getDay(d).rest || isPaused(d) || !loggedOn(d).length) break;
     n++;
   }
   return n;
@@ -185,6 +188,11 @@ export function computePlan(k) {
   if (cache.map.has(k)) return cache.map.get(k);
   const r = readiness(k);
   const s = stored(k);
+  if (isPaused(k)) { // "הקפאה": no workout plan
+    const p = { dayType: 'pause', intensity: 'pause', score: r.score, reason: 'אין אימון בימי ההקפאה' };
+    cache.map.set(k, p);
+    return p;
+  }
   let dayType, intensity, reason;
   if (r.facts.streak >= 5) {
     dayType = 'recovery'; intensity = 'recovery'; reason = `${r.facts.streak} ימי אימון ברצף`;
@@ -200,6 +208,12 @@ export function computePlan(k) {
       intensity = r.score >= 75 ? 'full' : r.score >= 50 ? 'normal' : r.score >= 30 ? 'light' : 'recovery';
       if (intensity === 'recovery') dayType = 'recovery';
       reason = factorText(r, intensity);
+      // Back from a pause: the first training day is a light one.
+      const lastWorkout = lastTrained(addDays(k, -1), GROUP_IDS) || addDays(k, -31);
+      if ((intensity === 'full' || intensity === 'normal') && pausedBetween(lastWorkout, k)) {
+        intensity = 'light';
+        reason = 'חוזרים מהקפאה';
+      }
     }
   }
   if (s?.override) {
@@ -214,9 +228,9 @@ export function computePlan(k) {
 
 export const dayTypeName = (id) => DAY_TYPES[id]?.name || '';
 /** "יום עליון · מלא" / "יום התאוששות" */
-export const planLabel = (p) => (p.dayType === 'recovery' ? DAY_TYPES.recovery.name : `${dayTypeName(p.dayType)} · ${INTENSITY[p.intensity]}`);
+export const planLabel = (p) => (SINGLE.has(p.dayType) ? DAY_TYPES[p.dayType].name : `${dayTypeName(p.dayType)} · ${INTENSITY[p.intensity]}`);
 /** "יום רגליים, קל — ישנת 4:30 שעות" / "יום התאוששות — 5 ימי אימון ברצף" */
-export const reasonLine = (p) => `${p.dayType === 'recovery' ? DAY_TYPES.recovery.name : `${dayTypeName(p.dayType)}, ${INTENSITY[p.intensity]}`} — ${p.reason}`;
+export const reasonLine = (p) => `${SINGLE.has(p.dayType) ? DAY_TYPES[p.dayType].name : `${dayTypeName(p.dayType)}, ${INTENSITY[p.intensity]}`} — ${p.reason}`;
 
 /* ---------- Targets, light days, progression ---------- */
 
@@ -321,6 +335,7 @@ export function planExercises(k, given) {
 
 function buildPlanExercises(k, plan) {
   if (!plan) return null;
+  if (plan.dayType === 'pause') return []; // everything is an extra during a pause
   const all = allForDay(k);
   const groups = DAY_TYPES[plan.dayType]?.groups || [];
   const list = plan.dayType === 'recovery'
@@ -416,6 +431,7 @@ export const overrideDays = () => [...coachDays(), DAY_TYPES.recovery];
 export function tomorrowPreview(k, now) {
   if (!coachOn() || k !== todayKey() || now < '18:00') return null;
   const p = computePlan(addDays(k, 1));
+  if (p.dayType === 'pause') return 'מחר: הקפאה';
   return `מחר: ${p.dayType === 'recovery' ? DAY_TYPES.recovery.name : dayTypeName(p.dayType)} (סופי אחרי רישום שינה)`;
 }
 
@@ -427,7 +443,7 @@ export function summaryPlan(k) {
   if (k === todayKey()) return computePlan(k);
   if (k < todayKey()) {
     const p = computePlan(k);
-    return p.dayType === 'recovery' ? p : null;
+    return p.dayType === 'recovery' || p.dayType === 'pause' ? p : null;
   }
   return null;
 }

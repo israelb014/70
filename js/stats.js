@@ -4,6 +4,7 @@ import { todayKey, addDays } from './dates.js';
 import { drinksMl } from './fluids.js';
 import { dayTypeOf, belongs } from './rotation.js';
 import { planExercises, planExercise } from './coach.js';
+import { isPaused } from './pause.js';
 
 /** Fraction (0..1) of an exercise's target achieved for a day entry. */
 export function exerciseProgress(ex, entry) {
@@ -101,9 +102,12 @@ export function isDayActive(k) {
 /** Consecutive active days ending today (if active) or yesterday. */
 export function currentStreak() {
   let k = todayKey();
-  if (!isDayActive(k)) k = addDays(k, -1);
+  // Today not yet active doesn't break it. Pause days are skipped: they neither break nor extend it.
+  if (!isDayActive(k) && !isPaused(k)) k = addDays(k, -1);
   let n = 0;
-  while (isDayActive(k) && n < 10000) {
+  for (let guard = 0; guard < 20000; guard++) {
+    if (isPaused(k)) { k = addDays(k, -1); continue; }
+    if (!isDayActive(k)) break;
     n++;
     k = addDays(k, -1);
   }

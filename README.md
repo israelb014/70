@@ -16,3 +16,10 @@
 כתובת: https://israelb014.github.io/70/
 
 טכנולוגיה: HTML, CSS ו-JavaScript נקי (ES modules), ללא תלויות וללא שלב build.
+
+## אפליקציית אנדרואיד
+אותו קוד משמש גם את גרסת הרשת (GitHub Pages, ללא שינוי) וגם אפליקציית אנדרואיד (Capacitor, `com.ibfix.seventy`).
+- `npm run build` מעתיק את האפליקציה ל-`dist/`. `npx cap sync android` מעדכן את פרויקט האנדרואיד.
+- תוספים ייחודיים: `HealthConnectPlugin.kt` (קריאה בלבד: צעדים, שינה, רכיבות) ו-`AppIconPlugin.kt` (אייקון לפי היום). הקוד המקורי ב-`js/native.js` ו-`js/nativeApp.js`.
+- ה-workflow בשם android מריץ את הבדיקות בכל push ל-main, בונה APK חתום ומפרסם GitHub Release בשם `v{גרסה}`. המפתח נשמר מוצפן ב-`android/keystore.enc`, והסיסמה שלו נמצאת ב-secret בשם `KEYSTORE_PASSWORD`.
+- בדיקות: `npm test` (Playwright, כולל גשר Capacitor מדומה).

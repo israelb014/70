@@ -4,6 +4,7 @@
 import { getState, getDay, stateVersion } from './storage.js';
 import { exerciseProgress } from './stats.js';
 import { exerciseById } from './storage.js';
+import { isPaused } from './pause.js';
 
 export const DAY_NAMES = ['יום א׳', 'יום ב׳', 'יום ג׳', 'יום ד׳'];
 export const MIN_DAYS = 2, MAX_DAYS = 4;
@@ -67,7 +68,7 @@ function timeline(r) {
   const dates = [], types = [];
   let last = null;
   for (const k of Object.keys(getState().days).filter((x) => x >= r.startDate).sort()) {
-    if (!hasWorkout(k)) continue; // rest days and days without a workout don't advance the rotation
+    if (!hasWorkout(k) || isPaused(k)) continue; // rest, pause and no-workout days don't advance the rotation
     const t = manualType(k, r) || loggedType(k, r) || (last ? nextOf(r, last) : r.days[0].id);
     dates.push(k);
     types.push(t);

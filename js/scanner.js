@@ -1,5 +1,6 @@
 // Full-screen barcode scanner: rear camera + native BarcodeDetector, with manual entry fallback.
 import { icon, esc, vibrate, HAPTIC } from './ui.js';
+import { isNative, scanBarcode } from './native.js';
 
 const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
 const VALID = /^\d{6,14}$/;
@@ -95,6 +96,15 @@ export function openScanner() {
     el.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') close(null);
     });
+
+    // Android app: ML Kit scanner (the WebView has no BarcodeDetector); typing stays the fallback.
+    if (isNative()) {
+      msg.textContent = 'פותחים את הסורק…';
+      const code = await scanBarcode();
+      if (code && VALID.test(code)) { vibrate(HAPTIC.item); close(code); return; }
+      showManual('לא נסרק ברקוד. אפשר להקליד את הספרות שמתחת לברקוד.');
+      return;
+    }
 
     // Camera + detector
     if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {

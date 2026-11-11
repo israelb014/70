@@ -17,17 +17,17 @@ const ICONS = {
   sleep: '<path d="M18.5 14.5A7.5 7.5 0 0 1 9 5a7.5 7.5 0 1 0 9.5 9.5z"/><path d="M15.5 3.5h3l-3 3.5h3M19.5 8.5h2l-2 2.3h2"/>',
 };
 
-export const BADGE_ON = '#FF6A00';
+export const BADGE_ON = 'var(--accent)';
 export const BADGE_OFF = '#3A3F47';
 
 /** Medallion SVG: ring, family icon and tier pill. */
 export function medallion(badge, earned, size = 72) {
   const c = earned ? BADGE_ON : BADGE_OFF;
   const tierFill = earned ? BADGE_ON : '#2A2E35';
-  const tierText = earned ? '#140800' : '#8A8F98';
+  const tierText = earned ? 'var(--on-accent)' : '#8A8F98';
   const w = Math.max(22, 9 + badge.tier.length * 7);
   return `<svg class="medal ${earned ? 'earned' : 'locked'}" width="${size}" height="${size}" viewBox="0 0 72 72" aria-hidden="true">
-    <circle cx="36" cy="34" r="31" fill="${earned ? 'rgba(255,106,0,0.10)' : '#1A1D22'}" stroke="${c}" stroke-width="3"/>
+    <circle cx="36" cy="34" r="31" fill="${earned ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : '#1A1D22'}" stroke="${c}" stroke-width="3"/>
     <circle cx="36" cy="34" r="25" fill="none" stroke="${c}" stroke-opacity="0.35" stroke-width="1" stroke-dasharray="2 3"/>
     <g transform="translate(21 17) scale(1.25)" fill="none" stroke="${c}" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${ICONS[badge.family] || ''}</g>
     <rect x="${36 - w / 2}" y="56" width="${w}" height="15" rx="7.5" fill="${tierFill}"/>

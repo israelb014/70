@@ -1,0 +1,31 @@
+{
+  "appId": "com.ibfix.seventy",
+  "appName": "70",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#0B0D10",
+    "allowMixedContent": false
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 600,
+      "launchAutoHide": true,
+      "backgroundColor": "#0B0D10",
+      "showSpinner": false,
+      "androidScaleType": "CENTER_INSIDE"
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_seventy",
+      "iconColor": "#FF6A00"
+    },
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "DARK"
+    },
+    "StatusBar": {
+      "style": "DARK",
+      "backgroundColor": "#0B0D10",
+      "overlaysWebView": false
+    }
+  }
+}

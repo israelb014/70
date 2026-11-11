@@ -9,6 +9,7 @@ import { sleepMinutes, fmtDuration, walkHistory, BADGES, durText, totalSleepMinu
 import { int, trim, plural } from './hebrew.js';
 import { typeCounts } from './rotation.js';
 import { summaryPlan } from './coach.js';
+import { isPaused } from './pause.js';
 
 /* ---------- helpers ---------- */
 
@@ -182,7 +183,7 @@ export function dayInsights(k) {
     out.push(day('targets', `עמדת היום ביעדים: ${joinHe(targets)}`, 'positive', 40, 'consistency'));
   }
 
-  return sortInsights(out);
+  return sortInsights(isPaused(k) ? out.filter((x) => x.kind !== 'attention') : out); // no "behind target" during a pause
 }
 
 /* ---------- week scope ---------- */
@@ -383,7 +384,7 @@ export function weekInsights(today = todayKey()) {
     }
   }
 
-  return sortInsights(out);
+  return sortInsights(isPaused(today) ? out.filter((x) => x.kind !== 'attention') : out);
 }
 
 /** Highest priority first; ties keep a stable order by id. */
