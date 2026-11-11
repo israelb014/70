@@ -33,10 +33,29 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Web tests (Playwright)
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+
+      - name: Install Playwright chromium
         run: |
-          npx playwright install --with-deps chromium
-          npm test
+          sudo apt-get update || echo "apt-get update failed, continuing"
+          for i in 1 2 3; do
+            if npx playwright install --with-deps chromium; then exit 0; fi
+            echo "playwright install --with-deps failed (attempt $i/3)"
+            if [ "$i" -lt 3 ]; then sleep 30; fi
+          done
+          echo "::warning::System deps could not be installed; installing chromium only (runner image already has the libraries)"
+          npx playwright install chromium
+
+      - name: Web tests (Playwright)
+        run: npm test
         env:
           TEST_JOBS: '3'
 
